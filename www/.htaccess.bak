@@ -1,0 +1,3 @@
+# We need SharedArrayBuffer for some cursed synchronisation, so we can asynchronously load stuff in a sync context...
+Cross-Origin-Resource-Policy: same-origin
+Cross-Origin-Embedder-Policy: same-origin

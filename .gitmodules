@@ -1,0 +1,6 @@
+[submodule "asyncify"]
+	path = asyncify
+	url = https://github.com/GoogleChromeLabs/asyncify.git
+[submodule "libbluray"]
+	path = libbluray
+	url = https://code.videolan.org/videolan/libbluray.git
