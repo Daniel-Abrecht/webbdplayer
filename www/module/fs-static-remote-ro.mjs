@@ -1,6 +1,12 @@
 "use strict";
 import { AsyncCreation } from "./utils.mjs";
-import { AbstractDirectory, AbstractFile, FileSystem, NotADirectoryError } from "./fs.mjs";
+import {
+  AbstractDirectory,
+  AbstractFile,
+  FileSystem,
+  FileSystemError,
+  NotADirectoryError
+} from "./fs.mjs";
 
 function unmarshall_meta(o){
   o = {...o};
@@ -43,8 +49,27 @@ class FileDescription {
   constructor(file, fd){
     this.file = file;
     this.fd = fd;
+    this.offset = 0n;
   }
-  async open(mode){}
+  async open(mode){
+    if((mode??'').indexOf('a') !== -1)
+      this.offset = this.file.info.size ?? 0;
+  }
+  seek(offset, whence){
+    if(!('size' in this.file.info))
+      throw new FileSystemError('ESPIPE',"Illegal seek");
+    const size = BigInt(this.file.info.size);
+    let p;
+    switch(whence){
+      case 'CUR': p = this.offset + offset; break;
+      case 'END': p = size + offset; break;
+      case 'SET': p = offset; break;
+    }
+    if(p < 0n) throw new FileSystemError('EINVAL',"Negative offset not allowed");
+    // console.log(this.offset, p, offset, whence, size);
+    this.offset = p;
+    return p;
+  }
 }
 
 const EntryMixin = e => class EntryMixin extends e {
@@ -89,8 +114,7 @@ export class Directory extends EntryMixin(AbstractDirectory){
     return await result;
   }
   async readdir(index){
-    // console.log('readdir', index);
-    return [];
+    return Object.keys(this.info.content).slice(index);
   }
 };
 

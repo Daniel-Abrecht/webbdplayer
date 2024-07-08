@@ -15,18 +15,27 @@ export class AbstractFile extends Dirent {};
 class FileDescription {
   constructor(fse){
     this.fs = fse;
+    this.fd = null;
+    this.opened = false;
   }
   async lookup(...x){
     return await this.fs.lookup(...x);
   }
   async open(mode){
-    this.fd = await this.fs.dirent.open(this, mode);
+    if(this.fs.dirent?.open)
+      this.fd = await this.fs.dirent.open(this, mode);
+    this.opened = true;
   }
   async readdir(index){
     if(this.fs.dirent?.readdir)
       return await this.fs.dirent.readdir(Number(index));
     // TODO: check mountpoint paths
     return [];
+  }
+  async seek(offset, whence){
+    if(!this.fd?.seek)
+      throw new FileSystemError('ESPIPE',"Illegal seek");
+    return this.fd.seek(offset, whence);
   }
 };
 
@@ -77,8 +86,7 @@ class FileSystemEntry {
   }
   async open(mode){
     const fd = new FileDescription(this);
-    if(!fd.open)
-      await fd.open(mode);
+    await fd.open(mode);
     return fd;
   }
 }
