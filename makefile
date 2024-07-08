@@ -74,7 +74,11 @@ all: $(BIN)
 
 www/build/libbluray.wasm: $(OBJECTS)
 	mkdir -p $(dir $@)
-	$(WASMCC) $(OPTIMIZE) -Wl,--export-dynamic -Wl,--error-limit=0 -Wl,--allow-undefined -Wl,--export=malloc -Wl,--export=free -o $@ $^
+	$(WASMCC) $(OPTIMIZE) -Wl,--error-limit=0 \
+	   -Wl,--export-dynamic -Wl,--allow-undefined \
+	   -Wl,--export=malloc -Wl,--export=free \
+	   -Wl,--export=__stack_low -Wl,--export=__stack_pointer \
+	   -o $@ $^
 
 %.async.wasm: %.wasm
 	wasm-opt $(OPTIMIZE) --asyncify $< -o $@
