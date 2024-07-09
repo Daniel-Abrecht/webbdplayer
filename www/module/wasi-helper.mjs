@@ -290,23 +290,42 @@ export class WASI_Base extends AsyncCreation {
     dv.setUint32($nwritten, written, true);
     return errno;
   }
-  fd_read(fd, $iovs, count, $nread){
-    const stats = CHECK_FD(fd, WASI_RIGHT_FD_READ);
-    const iovs = this.getiovs($iovs, count);
-    const size = iovs.reduce((a,b)=>a+b, 0n);
-    let read = 0;
-    for(const iov of iovs){
-      iov.byteLength;
-      // TODO
-    }
-    this.view.setUint32(nread, read, true);
-    return 0;
-  }
   fd_write_sub(fd, buf){
     const stat = this.#fdinfo[fd];
     if(!stat.fs?.write)
       throw new WASI_Error('EINVAL', "File is not writable");
     return stat.fs?.write(buf);
+  }
+  async $fd_read(fd, $iovs, count, $nread){
+    return await exception_to_errno_a(async()=>{
+      const stat = this.#fdinfo[fd];
+      if(!stat.fs?.read)
+        throw new WASI_Error('EINVAL', "File is not readable");
+      const iovs = this.getiovs($iovs, count);
+      const size = iovs.reduce((a,b)=>a+BigInt(b.byteLength), 0n);
+      const result = await stat.fs.read(size);
+      const dv = new DataView(this.$.memory.buffer);
+      let read = 0;
+      while(iovs.length && result.length){
+        const dst = iovs[0];
+        const src = result[0];
+        if(src.byteLength <= dst.byteLength){
+          dst.set(src);
+          iovs[0] = dst.subarray(src.byteLength);
+          result.shift();
+          if(src.byteLength == dst.byteLength)
+            iovs.shift();
+          read += src.byteLength;
+        }else{
+          dst.set(src.subarray(0,dst.byteLength));
+          result[0] = src.subarray(dst.byteLength);
+          iovs.shift();
+          read += dst.byteLength;
+        }
+      }
+      dv.setUint32($nread, read, true);
+      return 0;
+    });
   }
   async $fd_seek(fd, offset, whence, $new_offset){
     return await exception_to_errno_a(async()=>{

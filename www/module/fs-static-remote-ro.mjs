@@ -61,14 +61,23 @@ class FileDescription {
     const size = BigInt(this.file.info.size);
     let p;
     switch(whence){
-      case 'CUR': p = this.offset + offset; break;
+      case 'CUR': p = this.offset - offset; break; // TODO: Probably wrong
       case 'END': p = size + offset; break;
       case 'SET': p = offset; break;
     }
     if(p < 0n) throw new FileSystemError('EINVAL',"Negative offset not allowed");
-    // console.log(this.offset, p, offset, whence, size);
+     console.log(this.offset, p, offset, whence, size);
     this.offset = p;
     return p;
+  }
+  async read(size, offset){
+    offset ??= this.offset;
+    const file_size = BigInt(this.file.info.size);
+    if(offset >= file_size)
+      return [];
+    if(this.file.info.content)
+      return [this.file.info.content.subarray(Number(offset), Number(size))];
+    throw new Error("TODO");
   }
 }
 
