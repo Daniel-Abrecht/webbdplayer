@@ -61,12 +61,12 @@ class FileDescription {
     const size = BigInt(this.file.info.size);
     let p;
     switch(whence){
-      case 'CUR': p = this.offset - offset; break; // TODO: Probably wrong
+      case 'CUR': p = this.offset + offset; break;
       case 'END': p = size + offset; break;
       case 'SET': p = offset; break;
     }
     if(p < 0n) throw new FileSystemError('EINVAL',"Negative offset not allowed");
-     console.log(this.offset, p, offset, whence, size);
+    // console.log(this.offset, p, offset, whence, size);
     this.offset = p;
     return p;
   }
@@ -77,7 +77,7 @@ class FileDescription {
       return [];
     if(this.file.info.content)
       return [this.file.info.content.subarray(Number(offset), Number(size))];
-    throw new Error("TODO");
+    return await this.file.load_data(offset, size);
   }
 }
 
@@ -127,10 +127,25 @@ export class Directory extends EntryMixin(AbstractDirectory){
   }
 };
 
+const page_size = 1024n * 40n;
+const read_ahead = 10n;
+
+function max(a,b){
+  return a > b ? a : b;
+}
+
 export class File extends EntryMixin(AbstractFile){
   async init(...x){
     await super.init(...x);
     if(this.info.type !== 'file')
       throw new Error("Not a file!");
+  }
+  async load_data(offset, size){
+    const page_start = offset / page_size;
+    const page_count = (max(offset + size + read_ahead * page_size, BigInt(this.info.size)) + page_size - 1n) / page_size - page_start;
+    for(let i=0n; i<page_count; i++){
+
+    }
+    throw new Error("TODO");
   }
 };

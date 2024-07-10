@@ -8,4 +8,5 @@ const bluray_rootfs = await SRROFS.Directory.create('fs.php/','bd/Kaijin Kaihats
 fs.mount('/bd/', bluray_rootfs);
 
 const bluray = await Bluray.create({fs},["/bd/"]);
+await bluray.play();
 console.log(bluray);

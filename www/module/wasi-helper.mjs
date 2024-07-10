@@ -331,7 +331,7 @@ export class WASI_Base extends AsyncCreation {
     return await exception_to_errno_a(async()=>{
       const stat = this.#fdinfo[fd];
       const dv = new DataView(this.$.memory.buffer);
-      const new_offset = await stat.fs.seek(offset, ['CUR','END','SET'][whence]);
+      const new_offset = await stat.fs.seek(offset, ['SET','CUR','END'][whence]);
       dv.setBigUint64($new_offset, new_offset, true);
     });
   }

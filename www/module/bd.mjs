@@ -20,10 +20,14 @@ async function load_libbluray(){
       if(!this.#bd)
         throw new Error("Initialization failed");
     }
-    $dl_dlopen($libname, b){
+    async $dl_dlopen($libname, b){
       // const libname = cstr2str(this.$.memory.buffer, $libname);
       // console.debug('dl_dlopen',libname);
       return 0;
+    }
+    async play(){
+      if(!await this.$.bd_play(this.#bd))
+        throw new Error('Failed to start bluray playback');
     }
   };
 }
