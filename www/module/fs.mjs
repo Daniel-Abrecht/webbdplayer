@@ -37,10 +37,20 @@ class FileDescription {
       throw new FileSystemError('ESPIPE',"Illegal seek");
     return await this.fd.seek(offset, whence);
   }
-  async read(size, offset){
+  async tell(){
+    if(!this.fd?.tell)
+      throw new FileSystemError('ESPIPE',"FIle not seekable");
+    return await this.fd.tell();
+  }
+  async pread(size, offset){
     if(!this.fd?.read)
       throw new FileSystemError('EINVAL',"File is not readable");
     return await this.fd.read(size, offset);
+  }
+  async read(size){
+    if(!this.fd?.read)
+      throw new FileSystemError('EINVAL',"File is not readable");
+    return await this.fd.read(size);
   }
 };
 

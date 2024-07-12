@@ -46,13 +46,17 @@ SOURCES += libbluray/src/util/event_queue.c
 SOURCES += libbluray/src/util/logging.c
 SOURCES += libbluray/src/util/refcnt.c
 SOURCES += libbluray/src/util/strutl.c
+SOURCES += libbluray/src/util/time.c
 
 SOURCES += libbluray/src/file/file.c
 SOURCES += libbluray/src/file/file_posix.c
 SOURCES += libbluray/src/file/dir_posix.c
+SOURCES += libbluray/src/file/dirs_xdg.c
 
-SOURCES += extra/main.c
+SOURCES += extra/stubs.c
+SOURCES += extra/setup.c
 SOURCES += extra/mount_get_mountpoint.c
+SOURCES += extra/event_loop.c
 
 WASMCFLAGS += -DHAVE_CONFIG_H
 
@@ -61,7 +65,7 @@ OBJECTS=$(patsubst %,build/o/%.o,$(SOURCES))
 WASMCFLAGS += -Iextra -fvisibility=default
 WASMCFLAGS += -Ilibbluray/src/ -Ilibbluray/src/libbluray/
 WASMCFLAGS += -std=c99
-OPTIMIZE += -g
+OPTIMIZE += -O2 # -g
 
 WASMCC = clang-16 --target=wasm32-wasi -D_GNU_SOURCE
 

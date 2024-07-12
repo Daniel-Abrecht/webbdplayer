@@ -335,12 +335,29 @@ export class WASI_Base extends AsyncCreation {
       dv.setBigUint64($new_offset, new_offset, true);
     });
   }
+  async $fd_tell(fd, $offset){
+    return await exception_to_errno_a(async()=>{
+      const stat = this.#fdinfo[fd];
+      const dv = new DataView(this.$.memory.buffer);
+      const offset = await stat.fs.tell();
+      dv.setBigUint64($offset, offset, true);
+    });
+  }
   async alloc_str(str){
     const a = new TextEncoder().encode(str+"\0");
     const mem = await this.$.malloc(a.byteLength);
     if(!mem) throw new Error("malloc failed");
     new Uint8Array(this.$.memory.buffer).set(a, mem);
     return mem;
+  }
+  $clock_time_get(clock_id, precision, $result){
+    // Note: No idea how precision is supposed to be used...
+    const dv = new DataView(this.$.memory.buffer);
+    switch(clock_id){
+      case 0: dv.setBigUint64($result, BigInt(Date.now())*1000000n, true); break;
+      default: dv.setBigUint64($result, BigInt(performance.now())*1000000n, true); break;
+    }
+    return 0;
   }
   getiovs($iovs, length){
     const dv = new DataView(this.$.memory.buffer);
