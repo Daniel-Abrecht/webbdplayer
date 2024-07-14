@@ -91,6 +91,8 @@ for(const [k,v] of Object.entries(Object.keys(wasi_errno_message))){
   wasi_errno[k] = v;
   wasi_errno[v] = +k;
 }
+Object.seal(wasi_errno);
+Object.freeze(wasi_errno);
 
 export const wasi_rights = [
   "FD_DATASYNC", "FD_READ", "FD_SEEK", "FD_FDSTAT_SET_FLAGS", "FD_SYNC", "FD_TELL", "FD_WRITE", "FD_ADVISE", "FD_ALLOCATE",
@@ -101,6 +103,8 @@ export const wasi_rights = [
 ];
 for(const [k,v] of Object.entries(wasi_rights))
   wasi_rights[v] = +k;
+Object.seal(wasi_rights);
+Object.freeze(wasi_rights);
 export function wasi_rights_decompose(x){
   const res = [];
   for(let i=0; i<wasi_rights.length; i++)
@@ -160,11 +164,13 @@ export class WASI_Error extends Error {
   }
 }
 
+let seq=0;
+
 export class WASI_Base extends AsyncCreation {
   #fdinfo = [
     { type: wasi_filetype.REGULAR_FILE, rights: PIPE_RO_DEFAULT_RIGHTS }, // stdin
-    { type: wasi_filetype.REGULAR_FILE, rights: PIPE_WR_DEFAULT_RIGHTS, fs:{ write: buf=>console.log(cstr2str(buf))   }}, // stdout
-    { type: wasi_filetype.REGULAR_FILE, rights: PIPE_WR_DEFAULT_RIGHTS, fs:{ write: buf=>console.error(cstr2str(buf)) }}, // stderr
+    { type: wasi_filetype.REGULAR_FILE, rights: PIPE_WR_DEFAULT_RIGHTS, fs:{ write: buf=>console.log(cstr2str(buf,0,buf.length))   }}, // stdout
+    { type: wasi_filetype.REGULAR_FILE, rights: PIPE_WR_DEFAULT_RIGHTS, fs:{ write: buf=>console.error(cstr2str(buf,0,buf.length)) }}, // stderr
     { type: wasi_filetype.DIRECTORY, rights: DIR_RO_DEFAULT_RIGHTS }, // '/'
   ];
   async init({fs}){
@@ -177,11 +183,21 @@ export class WASI_Base extends AsyncCreation {
       const x = this['$'+o.name];
       if(o.kind == 'function'){
         if(x){
+          //For debugging call order. If an aync was forgotten anywhere, it'll wreck havoc.
+          /*m[o.name] = async(...a)=>{
+            const s = seq++;
+            console.debug(seq, o.module, o.name, ...a);
+            const ret = await x.call(this, ...a);
+            console.debug(seq);
+            return ret;
+          };*/
+          // For debugging calls
+          /*
           m[o.name] = (...a)=>{
             console.debug(o.module, o.name, ...a);
             return x.call(this, ...a);
-          };
-          //m[o.name] = (...a)=>x.call(this,...a);
+          };*/
+          m[o.name] = (...a)=>x.call(this,...a);
         }else{
           m[o.name] = (...a)=>{
             console.warn("stub", o.module, o.name, ...a);
@@ -199,7 +215,7 @@ export class WASI_Base extends AsyncCreation {
     if(!stat)
       return wasi_errno.EBADF;
     const dv = new DataView(this.$.memory.buffer);
-    dv.setUint32($bufPtr, 0 /* variant prestat_dir */);
+    dv.setUint8($bufPtr, 0 /* variant prestat_dir */);
     dv.setUint32($bufPtr+4, stat.fs?.fs?.path.length /* path length */, true);
     return 0;
   }
@@ -290,11 +306,11 @@ export class WASI_Base extends AsyncCreation {
     dv.setUint32($nwritten, written, true);
     return errno;
   }
-  fd_write_sub(fd, buf){
+  async fd_write_sub(fd, buf){
     const stat = this.#fdinfo[fd];
     if(!stat.fs?.write)
       throw new WASI_Error('EINVAL', "File is not writable");
-    return stat.fs?.write(buf);
+    return await stat.fs?.write(buf);
   }
   async $fd_read(fd, $iovs, count, $nread){
     return await exception_to_errno_a(async()=>{

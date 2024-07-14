@@ -85,7 +85,7 @@ export class API {
     if(pranges.length){
       const ranges = pranges.map(([a,b])=>[a*page_size,b*page_size]);
       const purl = url+'?r='+ranges.map(a=>a.join('-')).join(',');
-      console.log(pranges, ranges);
+      // console.log(pranges, ranges);
       const promise = fetch(purl).then(async r=>{
         if(!r.ok)
           throw new Error(r.statusText ?? r.status);

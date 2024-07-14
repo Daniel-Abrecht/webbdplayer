@@ -1,20 +1,58 @@
 "use strict";
 import { WASI_Base } from "./wasi-helper.mjs";
 
-const bd_event_e = [
-  'BD_EVENT_NONE','BD_EVENT_ERROR','BD_EVENT_READ_ERROR','BD_EVENT_ENCRYPTED',
-  'BD_EVENT_ANGLE','BD_EVENT_TITLE','BD_EVENT_PLAYLIST','BD_EVENT_PLAYITEM',
-  'BD_EVENT_CHAPTER','BD_EVENT_PLAYMARK','BD_EVENT_END_OF_TITLE','BD_EVENT_AUDIO_STREAM',
-  'BD_EVENT_IG_STREAM','BD_EVENT_PG_TEXTST_STREAM','BD_EVENT_PIP_PG_TEXTST_STREAM',
-  'BD_EVENT_SECONDARY_AUDIO_STREAM','BD_EVENT_SECONDARY_VIDEO_STREAM',
-  'BD_EVENT_PG_TEXTST','BD_EVENT_PIP_PG_TEXTST','BD_EVENT_SECONDARY_AUDIO',
-  'BD_EVENT_SECONDARY_VIDEO','BD_EVENT_SECONDARY_VIDEO_SIZE','BD_EVENT_PLAYLIST_STOP',
-  'BD_EVENT_DISCONTINUITY','BD_EVENT_SEEK','BD_EVENT_STILL','BD_EVENT_STILL_TIME',
-  'BD_EVENT_SOUND_EFFECT','BD_EVENT_IDLE','BD_EVENT_POPUP','BD_EVENT_MENU',
-  'BD_EVENT_STEREOSCOPIC_STATUS','BD_EVENT_KEY_INTEREST_TABLE','BD_EVENT_UO_MASK_CHANGED',
-];
-for(let i=0; i<bd_event_e.length; i++)
-  bd_event_e[bd_event_e[i]] = i;
+function mkenum(o){
+  for(let i=0; i<o.length; i++)
+    if(o[i])
+      o[o[i]] = i;
+  Object.seal(o);
+  Object.freeze(o);
+  return o;
+}
+
+const bd_event_e = mkenum([
+  'NONE','ERROR','READ_ERROR','ENCRYPTED',
+  'ANGLE','TITLE','PLAYLIST','PLAYITEM',
+  'CHAPTER','PLAYMARK','END_OF_TITLE','AUDIO_STREAM',
+  'IG_STREAM','PG_TEXTST_STREAM','PIP_PG_TEXTST_STREAM',
+  'SECONDARY_AUDIO_STREAM','SECONDARY_VIDEO_STREAM',
+  'PG_TEXTST','PIP_PG_TEXTST','SECONDARY_AUDIO',
+  'SECONDARY_VIDEO','SECONDARY_VIDEO_SIZE','PLAYLIST_STOP',
+  'DISCONTINUITY','SEEK','STILL','STILL_TIME',
+  'SOUND_EFFECT','IDLE','POPUP','MENU',
+  'STEREOSCOPIC_STATUS','KEY_INTEREST_TABLE','UO_MASK_CHANGED',
+]);
+const bd_overlay_plane_e = mkenum(['PG','IG']);
+const bd_overlay_cmd_e = mkenum(['INIT', 'CLOSE', 'CLEAR', 'DRAW', 'WIPE', 'HIDE', 'FLUSH']);
+const bd_argb_overlay_cmd_e = mkenum(['INIT','CLOSE',,,'DRAW','FLUSH']);
+
+const bd_vk_key_e = {
+  NONE: 0xFFFF,
+  0: 0,
+  1: 1,
+  2: 2,
+  3: 3,
+  4: 4,
+  5: 5,
+  6: 6,
+  7: 7,
+  8: 8,
+  9: 9,
+  ROOT_MENU: 10,
+  POPUP: 11,
+  UP: 12,
+  DOWN: 13,
+  LEFT: 14,
+  RIGHT: 15,
+  ENTER: 16,
+  MOUSE_ACTIVATE: 17,
+  RED: 403,
+  GREEN: 404,
+  YELLOW: 405,
+  BLUE: 406,
+};
+Object.seal(bd_vk_key_e);
+Object.freeze(bd_vk_key_e);
 
 async function load_libbluray(){
   const module = await WebAssembly.compileStreaming(fetch("build/libbluray.async.wasm"));
@@ -36,7 +74,9 @@ async function load_libbluray(){
       }
       if(!this.#bd)
         throw new Error("Initialization failed");
-      this.$.setup(this.#bd);
+      await this.$.setup(this.#bd);
+      this.overlay_current = [];
+      this.overlay_scratch = [];
     }
     async $dl_dlopen($libname, b){
       // const libname = cstr2str(this.$.memory.buffer, $libname);
@@ -47,6 +87,7 @@ async function load_libbluray(){
       if(!await this.$.bd_play(this.#bd))
         throw new Error('Failed to start bluray playback');
       this.event_loop();
+      this.still_timer_resume();
     }
     event_loop(){
       if(this.#event_loop_running)
@@ -70,6 +111,7 @@ async function load_libbluray(){
                 this.#still_timer_resume = resume;
                 still_timer = setTimeout(resume, this.still_time*1000)
               }};
+              this.still_time = 0;
             }else{
               await { then: resolve => requestAnimationFrame(resolve) };
             }
@@ -78,6 +120,31 @@ async function load_libbluray(){
           this.#event_loop_running = false;
         }
       })();
+    }
+    static vk_key_e = bd_vk_key_e;
+    // key is one of Bluray.vk_key_e
+    async keypress_begin(key){
+      if(typeof key == "string")
+        key = key.toUpperCase();
+      if(key in bd_vk_key_e)
+        key = bd_vk_key_e[key];
+      await this.$.bd_user_input(this.#bd, -1n, key|0x80000000);
+    }
+    async keypress_end(key){
+      if(typeof key == "string")
+        key = key.toUpperCase();
+      if(key in bd_vk_key_e)
+        key = bd_vk_key_e[key];
+      await this.$.bd_user_input(this.#bd, -1n, key|0x20000000);
+    }
+    async keypress(key){
+      if(typeof key == "string")
+        key = key.toUpperCase();
+      if(key in bd_vk_key_e)
+        key = bd_vk_key_e[key];
+      await this.$.bd_user_input(this.#bd, -1n, key|0x20000000);
+      await this.$.bd_user_input(this.#bd, -1n, key|0x40000000);
+      await this.$.bd_user_input(this.#bd, -1n, key|0x80000000);
     }
     still_timer_resume(){
       this.#still_timer_resume?.();
@@ -88,15 +155,15 @@ async function load_libbluray(){
         type: dv.getUint32(0,true),
         param: dv.getUint32(4,true),
       };
-      if(ev.type == bd_event_e.BD_EVENT_STILL_TIME)
+      if(ev.type == bd_event_e.STILL_TIME)
         this.still_time = ev.param || 60; // ev is infinite, bit it's easier to just delay and retry for a bit longer.
       //   return; // Nothing to do
-      console.log(bd_event_e[ev.type], ev);
-      if(ev.type == bd_event_e.BD_EVENT_READ_ERROR)
+      console.info('event',bd_event_e[ev.type], ev.param);
+      if(ev.type == bd_event_e.READ_ERROR)
         return -1; // For debbuging
       return 0;
     }
-    async $cb_overlay($ptr, $overlay){
+    async $cb_overlay($ptr, $overlay, $decoded){
       const dv = new DataView(this.$.memory.buffer, $overlay);
       const overlay = {
         pts: dv.getBigInt64(0, true),
@@ -110,7 +177,145 @@ async function load_libbluray(){
         $palette: dv.getUint32(20,true),
         $img: dv.getUint32(24,true),
       };
-      console.log('overlay', overlay);
+      const i = overlay.plane * 2;
+      const scratch = this.overlay_scratch[i+0] ??= { objects:[] };
+      const unref = x=>{
+        if(!--x.refcount && this.cb_overlay_free)
+          this.cb_overlay_free(x);
+      };
+      switch(overlay.cmd){
+        case bd_overlay_cmd_e.INIT: {
+          scratch.rect = [
+            [overlay.x,overlay.y],
+            [overlay.x+overlay.w,overlay.y+overlay.h],
+          ];
+          scratch.objects.forEach(unref);
+          scratch.objects = [];
+        } break;
+        case bd_overlay_cmd_e.CLOSE: {
+          if(this.overlay_current[i+0])
+            this.overlay_current[i+0].objects.forEach(unref);
+          scratch.objects.forEach(unref);
+          delete this.overlay_scratch[i+0];
+          delete this.overlay_current[i+0];
+        } break;
+        case bd_overlay_cmd_e.WIPE: {
+          const rect = [
+            [overlay.x,overlay.y],
+            [overlay.x+overlay.w,overlay.y+overlay.h],
+          ];
+          const l = this.overlay_scratch.objects;
+          for(let i=0,n=l.length; i<n; i++){
+            const o = l[i];
+            const w = o.rect[1][0] - o.rect[0][0];
+            const h = o.rect[1][1] - o.rect[0][1];
+            const b = [ // Coordinates normalized to target rect range, 0.0 to 1.0
+              (rect[0][0]-o.rect[0][0])/w, (rect[0][1]-o.rect[0][1])/h,
+              (rect[1][0]-o.rect[0][0])/w, (rect[1][1]-o.rect[0][1])/h,
+            ];
+            const lv = [];
+            for(const a of o.visible){
+              if( b[1][0] <= a[0][0] || b[1][1] <= a[0][1]
+               || b[0][0] >= a[1][0] || b[0][0] >= a[1][0]
+              ){ // Keep area, fully outside removed area, no need to split it
+                lv.push(a);
+              }else{
+                // Some part of the rectangle must be cut out.
+                // If the to be cut out rectangle was in the middle, it can be tiled into 8 smaller rectangles by extending the lines of the inner rectangle.
+                // This is always some combination of the coordinates of the corners of the rectangles.
+                // Since the area to cut out may be only partially inside, we clamp all areas to the outer area and check if it's width / height is >0, else it's outside.
+                const c = [
+                  [ [a[0][0],a[0][1]],[b[0][0],b[0][1]] ], [ [b[0][0],a[0][1]],[b[1][0],b[0][1]] ], [ [b[1][0],a[0][1]],[a[1][0],b[0][1]] ],
+                  [ [a[0][0],b[0][1]],[b[0][0],b[1][1]] ],                                          [ [b[1][0],b[0][1]],[a[1][0],b[1][1]] ],
+                  [ [a[0][0],b[1][1]],[b[0][0],a[1][1]] ], [ [b[0][0],b[1][1]],[b[1][0],a[1][1]] ], [ [b[1][0],b[1][1]],[a[1][0],a[1][1]] ],
+                ].filter(x=>!(x[0][0]>=a[1][0] || x[0][1]>=a[1][1] || x[1][0]<=a[0][0] || x[1][1]<=a[0][1]))
+                  .map(r=>r.map(([x,y])=>[
+                    Math.min(a[1][0],Math.max(x,a[0][0])),
+                    Math.min(a[1][1],Math.max(y,a[0][1])),
+                  ])).filter(([[x0,y0],[x1,y1]])=>(x0<x1 && y0<y1))
+                    .forEach(x=>lv.push(x));
+              }
+            }
+            o.visible = lv;
+            if(!o.visible.length){
+              l.splice(i--, 1);
+              unref(o);
+            }
+          }
+        } break;
+        case bd_overlay_cmd_e.CLEAR: {
+          scratch.objects.forEach(unref);
+          scratch.objects = [];
+        } break;
+        case bd_overlay_cmd_e.DRAW: {
+          // TODO: Transparent overlaping overlays do not blend together, reuse the wipe code to cut out the overwritten area.
+          scratch.objects.push({
+            refcount: 1,
+            rect: [
+              [overlay.x,overlay.y],
+              [overlay.x+overlay.w,overlay.y+overlay.h],
+            ],
+            visible: [ [[0,0],[1,1]] ], // Normalized coordinates for visible rectangles
+            img: await createImageBitmap(new ImageData(
+              // Note: This buffer may get overwritten after leaving this function
+              new Uint8ClampedArray(this.$.memory.buffer, $decoded, overlay.w*overlay.h*4),
+              overlay.w, overlay.h
+            )),
+          });
+        } break;
+        case bd_overlay_cmd_e.HIDE: {
+          if(this.overlay_current[i+0])
+            this.overlay_current[i+0].objects.forEach(unref);
+          delete this.overlay_current[i+0];
+        } break;
+        case bd_overlay_cmd_e.FLUSH: {
+          if(!scratch.rect) break;
+          let ov = {
+            layer: overlay.plane,
+            rect: scratch.rect,
+            objects: [...scratch.objects],
+          };
+          // Note: We use the overlay plane size here, but we'd really need the size of the video instead.
+          const sw = ov.rect[1][0] - ov.rect[0][0];
+          const sh = ov.rect[1][1] - ov.rect[0][1];
+          ov.objects.forEach(x=>x.refcount++);
+          for(const obj of ov.objects){
+            const ow = obj.rect[1][0] - obj.rect[0][0];
+            const oh = obj.rect[1][1] - obj.rect[0][1];
+            const a = obj.attribute = {
+              texcoord: new Float32Array(obj.visible.length*12),
+            };
+            // Multiplying the texture coordinates with this matrix will result in the position coordinates
+            // Note: range is -1 to 1 instead of 0 to 1.
+            obj.view_matrix = [
+              ow/sw*2,  0, (obj.rect[0][0] + ov.rect[0][0]) / sw* 2 - 1,
+              0, oh/sh*-2, (obj.rect[0][1] + ov.rect[0][1]) / sh*-2 + 1,
+              0, 0, 0,
+            ];
+            let i = 0;
+            for(const rect of obj.visible){
+              a.texcoord[i+ 0] = rect[0][0];
+              a.texcoord[i+ 1] = rect[0][1];
+              a.texcoord[i+ 2] = rect[1][0];
+              a.texcoord[i+ 3] = rect[0][1];
+              a.texcoord[i+ 4] = rect[0][0];
+              a.texcoord[i+ 5] = rect[1][1];
+              a.texcoord[i+ 6] = rect[1][0];
+              a.texcoord[i+ 7] = rect[0][1];
+              a.texcoord[i+ 8] = rect[0][0];
+              a.texcoord[i+ 9] = rect[1][1];
+              a.texcoord[i+10] = rect[1][0];
+              a.texcoord[i+11] = rect[1][1];
+              //
+              i += 12;
+            }
+          }
+          if(this.overlay_current[i+0])
+            this.overlay_current[i+0].objects.forEach(unref);
+          this.overlay_current[i+0] = ov;
+          this.cb_overlay_update?.(ov);
+        } break;
+      }
     }
   };
 }

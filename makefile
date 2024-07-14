@@ -57,6 +57,7 @@ SOURCES += extra/stubs.c
 SOURCES += extra/setup.c
 SOURCES += extra/mount_get_mountpoint.c
 SOURCES += extra/event_loop.c
+SOURCES += extra/decode_pg_rle.c
 
 WASMCFLAGS += -DHAVE_CONFIG_H
 
@@ -65,6 +66,7 @@ OBJECTS=$(patsubst %,build/o/%.o,$(SOURCES))
 WASMCFLAGS += -Iextra -fvisibility=default
 WASMCFLAGS += -Ilibbluray/src/ -Ilibbluray/src/libbluray/
 WASMCFLAGS += -std=c99
+WASMCFLAGS += -fstack-protector-all
 OPTIMIZE += -O2 # -g
 
 WASMCC = clang-16 --target=wasm32-wasi -D_GNU_SOURCE
@@ -81,7 +83,7 @@ www/build/libbluray.wasm: $(OBJECTS)
 	$(WASMCC) $(OPTIMIZE) -Wl,--error-limit=0 \
 	   -Wl,--export-dynamic -Wl,--allow-undefined \
 	   -Wl,--export=malloc -Wl,--export=free \
-	   -Wl,--export=__stack_low -Wl,--export=__stack_pointer \
+	   -Wl,--export=__stack_low -Wl,--export=__stack_high -Wl,--export=__stack_pointer \
 	   -o $@ $^
 
 %.async.wasm: %.wasm
