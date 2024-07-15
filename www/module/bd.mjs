@@ -315,7 +315,6 @@ async function load_libbluray(){
             this.overlay_current[i+0].objects.forEach(unref);
           this.overlay_current[i+0] = ov;
           this.cb_overlay_update?.(ov);
-          console.log(this.overlay_current);
         } break;
       }
     }

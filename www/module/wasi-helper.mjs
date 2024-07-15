@@ -167,6 +167,7 @@ export class WASI_Error extends Error {
 let seq=0;
 
 export class WASI_Base extends AsyncCreation {
+  #lock = null;
   #fdinfo = [
     { type: wasi_filetype.REGULAR_FILE, rights: PIPE_RO_DEFAULT_RIGHTS }, // stdin
     { type: wasi_filetype.REGULAR_FILE, rights: PIPE_WR_DEFAULT_RIGHTS, fs:{ write: buf=>console.log(cstr2str(buf,0,buf.length))   }}, // stdout
@@ -207,7 +208,27 @@ export class WASI_Base extends AsyncCreation {
       }
     }
     this.wasm_instance = await Asyncify.instantiate(this.constructor.wasm_module, imports);
-    this.$ = this.wasm_instance.exports;
+    this.$ = {};
+    for(const [k,v] of Object.entries(this.wasm_instance.exports)){
+      if(v instanceof Function){
+        this.$[k] = async(...x)=>{
+          while(this.#lock)
+            await this.#lock;
+          // Since we always use the same area for the async stack, we can't call any (async) wasm functions at the same time.
+          const result = v(...x);
+          if(result.then)
+            this.#lock = result;
+          try {
+            await result;
+          } finally {
+            this.#lock = null;
+          }
+          return result;
+        };
+      }else{
+        this.$[k] = v;
+      }
+    }
   }
   $environ_sizes_get($a, $b){ return 0; }
   $fd_prestat_get(fd, $bufPtr){
