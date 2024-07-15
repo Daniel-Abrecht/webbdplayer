@@ -146,9 +146,11 @@ void main() {
   }
   #overlay_free(o){
     const gl = this.#gl;
-    Object.values(o.buffer).forEach(b=>gl.deleteBuffer(b));
-    gl.deleteVertexArray(o.vao);
-    gl.deleteTexture(o.texture);
+    Object.values(o.buffer??{}).forEach(b=>gl.deleteBuffer(b));
+    if(o.vao)
+      gl.deleteVertexArray(o.vao);
+    if(o.texture)
+      gl.deleteTexture(o.texture);
   }
   #textureFromImage(img){
     const gl = this.#gl;
@@ -168,13 +170,15 @@ void main() {
     const gl = this.#gl;
     w ||= gl.drawingBufferWidth;
     h ||= gl.drawingBufferHeight;
+    gl.enable(gl.SCISSOR_TEST);
     gl.viewport(x,y,w,h);
+    gl.scissor(x,y,w,h);
     gl.clearColor(0,0,0,0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.#program.main);
     gl.activeTexture(gl.TEXTURE0);
-    //gl.enable(gl.BLEND);
-    //gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(this.#program.main.uni.u_texture, 0);
     for(const overlay of this.#bluray.overlay_current) if(overlay){
@@ -186,7 +190,8 @@ void main() {
       }
     }
     gl.bindVertexArray(null);
-    gl.blendFunc(gl.ONE, gl.ZERO); // reset to default
+    gl.disable(gl.BLEND);
+    gl.disable(gl.SCISSOR_TEST);
   }
 }
 

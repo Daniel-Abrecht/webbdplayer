@@ -183,6 +183,50 @@ async function load_libbluray(){
         if(!--x.refcount && this.cb_overlay_free)
           this.cb_overlay_free(x);
       };
+      const wipe = rect => {
+        rect ??= [
+          [overlay.x,overlay.y],
+          [overlay.x+overlay.w,overlay.y+overlay.h],
+        ];
+        const l = scratch.objects;
+        for(let i=l.length; i--; ){
+          const o = l[i];
+          const w = o.rect[1][0] - o.rect[0][0];
+          const h = o.rect[1][1] - o.rect[0][1];
+          const b = [ // Coordinates normalized to target rect range, 0.0 to 1.0
+            [(rect[0][0]-o.rect[0][0])/w, (rect[0][1]-o.rect[0][1])/h],
+            [(rect[1][0]-o.rect[0][0])/w, (rect[1][1]-o.rect[0][1])/h],
+          ];
+          const lv = [];
+          for(const a of o.visible){
+            if( b[1][0] <= a[0][0] || b[1][1] <= a[0][1]
+              || b[0][0] >= a[1][0] || b[0][1] >= a[1][1]
+            ){ // Keep area, fully outside removed area, no need to split it
+              lv.push(a);
+            }else{
+              // Some part of the rectangle must be cut out.
+              // If the to be cut out rectangle was in the middle, it can be tiled into 8 smaller rectangles by extending the lines of the inner rectangle.
+              // This is always some combination of the coordinates of the corners of the rectangles.
+              // Since the area to cut out may be only partially inside, we clamp all areas to the outer area and check if it's width / height is >0, else it's outside.
+              const c = [
+                [ [a[0][0],a[0][1]],[b[0][0],b[0][1]] ], [ [b[0][0],a[0][1]],[b[1][0],b[0][1]] ], [ [b[1][0],a[0][1]],[a[1][0],b[0][1]] ],
+                [ [a[0][0],b[0][1]],[b[0][0],b[1][1]] ],                                          [ [b[1][0],b[0][1]],[a[1][0],b[1][1]] ],
+                [ [a[0][0],b[1][1]],[b[0][0],a[1][1]] ], [ [b[0][0],b[1][1]],[b[1][0],a[1][1]] ], [ [b[1][0],b[1][1]],[a[1][0],a[1][1]] ],
+              ].filter(x=>!(x[0][0]>=a[1][0] || x[0][1]>=a[1][1] || x[1][0]<=a[0][0] || x[1][1]<=a[0][1]))
+                .map(r=>r.map(([x,y])=>[
+                  Math.min(a[1][0],Math.max(x,a[0][0])),
+                  Math.min(a[1][1],Math.max(y,a[0][1])),
+                ])).filter(([[x0,y0],[x1,y1]])=>(x0<x1 && y0<y1))
+                  .forEach(x=>lv.push(x));
+            }
+          }
+          o.visible = lv;
+          if(!o.visible.length){
+            l.splice(i, 1);
+            unref(o);
+          }
+        }
+      }
       switch(overlay.cmd){
         case bd_overlay_cmd_e.INIT: {
           scratch.rect = [
@@ -199,56 +243,13 @@ async function load_libbluray(){
           delete this.overlay_scratch[i+0];
           delete this.overlay_current[i+0];
         } break;
-        case bd_overlay_cmd_e.WIPE: {
-          const rect = [
-            [overlay.x,overlay.y],
-            [overlay.x+overlay.w,overlay.y+overlay.h],
-          ];
-          const l = this.overlay_scratch.objects;
-          for(let i=0,n=l.length; i<n; i++){
-            const o = l[i];
-            const w = o.rect[1][0] - o.rect[0][0];
-            const h = o.rect[1][1] - o.rect[0][1];
-            const b = [ // Coordinates normalized to target rect range, 0.0 to 1.0
-              (rect[0][0]-o.rect[0][0])/w, (rect[0][1]-o.rect[0][1])/h,
-              (rect[1][0]-o.rect[0][0])/w, (rect[1][1]-o.rect[0][1])/h,
-            ];
-            const lv = [];
-            for(const a of o.visible){
-              if( b[1][0] <= a[0][0] || b[1][1] <= a[0][1]
-               || b[0][0] >= a[1][0] || b[0][0] >= a[1][0]
-              ){ // Keep area, fully outside removed area, no need to split it
-                lv.push(a);
-              }else{
-                // Some part of the rectangle must be cut out.
-                // If the to be cut out rectangle was in the middle, it can be tiled into 8 smaller rectangles by extending the lines of the inner rectangle.
-                // This is always some combination of the coordinates of the corners of the rectangles.
-                // Since the area to cut out may be only partially inside, we clamp all areas to the outer area and check if it's width / height is >0, else it's outside.
-                const c = [
-                  [ [a[0][0],a[0][1]],[b[0][0],b[0][1]] ], [ [b[0][0],a[0][1]],[b[1][0],b[0][1]] ], [ [b[1][0],a[0][1]],[a[1][0],b[0][1]] ],
-                  [ [a[0][0],b[0][1]],[b[0][0],b[1][1]] ],                                          [ [b[1][0],b[0][1]],[a[1][0],b[1][1]] ],
-                  [ [a[0][0],b[1][1]],[b[0][0],a[1][1]] ], [ [b[0][0],b[1][1]],[b[1][0],a[1][1]] ], [ [b[1][0],b[1][1]],[a[1][0],a[1][1]] ],
-                ].filter(x=>!(x[0][0]>=a[1][0] || x[0][1]>=a[1][1] || x[1][0]<=a[0][0] || x[1][1]<=a[0][1]))
-                  .map(r=>r.map(([x,y])=>[
-                    Math.min(a[1][0],Math.max(x,a[0][0])),
-                    Math.min(a[1][1],Math.max(y,a[0][1])),
-                  ])).filter(([[x0,y0],[x1,y1]])=>(x0<x1 && y0<y1))
-                    .forEach(x=>lv.push(x));
-              }
-            }
-            o.visible = lv;
-            if(!o.visible.length){
-              l.splice(i--, 1);
-              unref(o);
-            }
-          }
-        } break;
+        case bd_overlay_cmd_e.WIPE: wipe(); break;
         case bd_overlay_cmd_e.CLEAR: {
           scratch.objects.forEach(unref);
           scratch.objects = [];
         } break;
         case bd_overlay_cmd_e.DRAW: {
-          // TODO: Transparent overlaping overlays do not blend together, reuse the wipe code to cut out the overwritten area.
+          wipe();
           scratch.objects.push({
             refcount: 1,
             rect: [
@@ -314,6 +315,7 @@ async function load_libbluray(){
             this.overlay_current[i+0].objects.forEach(unref);
           this.overlay_current[i+0] = ov;
           this.cb_overlay_update?.(ov);
+          console.log(this.overlay_current);
         } break;
       }
     }
