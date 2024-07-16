@@ -216,12 +216,15 @@ export class WASI_Base extends AsyncCreation {
             await this.#lock;
           // Since we always use the same area for the async stack, we can't call any (async) wasm functions at the same time.
           const result = v(...x);
-          if(result.then)
-            this.#lock = result;
-          try {
-            await result;
-          } finally {
-            this.#lock = null;
+          if(result.then){
+            // Make sure #lock is unset before the promise resolves.
+            this.#lock = (async()=>{
+              try {
+                await result;
+              } finally {
+                this.#lock = null;
+              }
+            })();
           }
           return result;
         };

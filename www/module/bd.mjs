@@ -87,7 +87,7 @@ async function load_libbluray(){
       if(!await this.$.bd_play(this.#bd))
         throw new Error('Failed to start bluray playback');
       this.event_loop();
-      this.still_timer_resume();
+      this.still_timer_resume?.();
     }
     event_loop(){
       if(this.#event_loop_running)
@@ -129,6 +129,7 @@ async function load_libbluray(){
       if(key in bd_vk_key_e)
         key = bd_vk_key_e[key];
       await this.$.bd_user_input(this.#bd, -1n, key|0x80000000);
+      this.still_timer_resume?.();
     }
     async keypress_end(key){
       if(typeof key == "string")
@@ -136,6 +137,7 @@ async function load_libbluray(){
       if(key in bd_vk_key_e)
         key = bd_vk_key_e[key];
       await this.$.bd_user_input(this.#bd, -1n, key|0x20000000);
+      this.still_timer_resume?.();
     }
     async keypress(key){
       if(typeof key == "string")
@@ -145,6 +147,7 @@ async function load_libbluray(){
       await this.$.bd_user_input(this.#bd, -1n, key|0x20000000);
       await this.$.bd_user_input(this.#bd, -1n, key|0x40000000);
       await this.$.bd_user_input(this.#bd, -1n, key|0x80000000);
+      this.still_timer_resume?.();
     }
     still_timer_resume(){
       this.#still_timer_resume?.();
@@ -257,7 +260,7 @@ async function load_libbluray(){
               [overlay.x+overlay.w,overlay.y+overlay.h],
             ],
             visible: [ [[0,0],[1,1]] ], // Normalized coordinates for visible rectangles
-            img: await createImageBitmap(new ImageData(
+            img: await createImageBitmap(new ImageData( // TODO: Cut away transparent borders to safe some memory.
               // Note: This buffer may get overwritten after leaving this function
               new Uint8ClampedArray(this.$.memory.buffer, $decoded, overlay.w*overlay.h*4),
               overlay.w, overlay.h
