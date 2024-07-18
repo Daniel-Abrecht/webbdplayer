@@ -8,6 +8,10 @@ export class GLBDPlayer extends AsyncCreation {
   #gl;
   #program = {};
   #shader = {};
+  #video;
+  #videoTexture;
+  #vao_rect;
+  #onframe;
   #source = {
     main_vertex: `\
 #version 300 es
@@ -63,18 +67,47 @@ void main() {
     79: 'BLUE', // O
     80: 'YELLOW', // P
   };
-  async init(directory, {gl}={}){
+  async init(directory, {gl, onframe}={}){
     this.#onkeydown = this.#onkeydown.bind(this);
     this.#onkeyup = this.#onkeyup.bind(this);
     this.#gl = gl;
-    const fs = new FileSystem();
-    fs.mount('/bd/', directory);
-    this.#bluray = await Bluray.create({fs},["/bd/"]);
-    this.#bluray.cb_overlay_free = (...x)=>this.#overlay_free(...x);
-    this.#bluray.cb_overlay_update = (...x)=>this.#overlay_update(...x);
-    this.#shader.main_vertex   = this.#compile_shader(gl.VERTEX_SHADER, this.#source.main_vertex);
-    this.#shader.main_fragment = this.#compile_shader(gl.FRAGMENT_SHADER, this.#source.main_fragment);
-    this.#program.main = this.#compile_program(this.#shader.main_vertex, this.#shader.main_fragment, ['a_texcoord'], ['u_texture','u_view']);
+    this.#onframe = onframe;
+    {
+      const fs = new FileSystem();
+      fs.mount('/bd/', directory);
+      this.#bluray = await Bluray.create({fs},["/bd/"]);
+      this.#bluray.cb_overlay_free = (...x)=>this.#overlay_free(...x);
+      this.#bluray.cb_overlay_update = (...x)=>this.#overlay_update(...x);
+    }
+    {
+      this.#shader.main_vertex   = this.#compile_shader(gl.VERTEX_SHADER, this.#source.main_vertex);
+      this.#shader.main_fragment = this.#compile_shader(gl.FRAGMENT_SHADER, this.#source.main_fragment);
+      this.#program.main = this.#compile_program(this.#shader.main_vertex, this.#shader.main_fragment, ['a_texcoord'], ['u_texture','u_view']);
+    }
+    {
+      this.#video = document.createElement("video");
+      // this.#video.autoplay = true;
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      this.#videoTexture = texture;
+      const buffer = gl.createBuffer();
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.enableVertexAttribArray(this.#program.main.attr.a_texcoord);
+      gl.vertexAttribPointer(this.#program.main.attr.a_texcoord, 2, gl.FLOAT, false, 0, 0);
+      gl.bindVertexArray(null);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,0,1,0,0,1, 1,0,0,1,1,1]), gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      vao.a_texcoord = buffer;
+      this.#vao_rect = vao;
+      this.#video.requestVideoFrameCallback?.((now, meta)=>this.#updateVideoFrame(now, meta))
+      this.#video.src = "sample/out.mp4";
+    }
   }
   #onkeyup = function(event){
     this.#bluray.keypress_begin(GLBDPlayer.#key_mapping[event.keyCode]);
@@ -161,16 +194,27 @@ void main() {
     gl.bindTexture(gl.TEXTURE_2D, null);
     return texture;
   }
-  play(){
-    return this.#bluray.play();
+  async play(){
+    this.#video.play();
+    await this.#bluray.play();
   }
-  drawFrame([w,h]=[0,0],[x,y]=[0,0]){
+  #updateVideoFrame(now, meta){
+    const gl = this.#gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.#videoTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.#video);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    if(this.#video.requestVideoFrameCallback){
+      this.#video.requestVideoFrameCallback((now, meta)=>this.#updateVideoFrame(now, meta))
+      this.#onframe?.(now, meta);
+    }
+  }
+  drawFrame(now, [w,h]=[0,0],[x,y]=[0,0]){
     const gl = this.#gl;
     w ||= gl.drawingBufferWidth;
     h ||= gl.drawingBufferHeight;
-    gl.enable(gl.SCISSOR_TEST);
+    // gl.enable(gl.SCISSOR_TEST);
     gl.viewport(x,y,w,h);
-    gl.scissor(x,y,w,h);
+    // gl.scissor(x,y,w,h);
     gl.clearColor(0,0,0,0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.#program.main);
@@ -179,6 +223,14 @@ void main() {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(this.#program.main.uni.u_texture, 0);
+    { // Render main video
+      if(!this.#video.requestVideoFrameCallback)
+        this.#updateVideoFrame(now);
+      gl.bindVertexArray(this.#vao_rect);
+      gl.bindTexture(gl.TEXTURE_2D, this.#videoTexture);
+      gl.uniformMatrix3fv(this.#program.main.uni.u_view, false, [2,0,-1, 0,-2,1, 0,0,0]);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
     for(const overlay of this.#bluray.overlay_current) if(overlay){
       for(const o of overlay.objects){
         gl.bindVertexArray(o.vao);
@@ -189,6 +241,6 @@ void main() {
     }
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
-    gl.disable(gl.SCISSOR_TEST);
+    // gl.disable(gl.SCISSOR_TEST);
   }
 }

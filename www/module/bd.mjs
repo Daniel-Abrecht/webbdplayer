@@ -86,40 +86,40 @@ async function load_libbluray(){
     async play(){
       if(!await this.$.bd_play(this.#bd))
         throw new Error('Failed to start bluray playback');
-      this.event_loop();
+      this.#event_loop();
       this.still_timer_resume?.();
     }
-    event_loop(){
+    async #event_loop(){
       if(this.#event_loop_running)
         return;
       this.#event_loop_running = true;
-      (async()=>{
-        try {
-          while(this.#event_loop_running){
-            const res = await this.$.event_loop(this.#bd);
-            if(res == -1)
-              throw new Error("Failed to get events");
-            if(this.still_time){
-              await { then: resolve=>{
-                let still_timer;
-                const resume = ()=>{
-                  clearTimeout(still_timer);
-                  still_timer = null;
-                  this.#still_timer_resume = null;
-                  resolve();
-                };
-                this.#still_timer_resume = resume;
-                still_timer = setTimeout(resume, this.still_time*1000)
-              }};
-              this.still_time = 0;
-            }else{
-              await { then: resolve => requestAnimationFrame(resolve) };
-            }
-          }
-        } finally {
-          this.#event_loop_running = false;
+      this.#event_loop_sub();
+    }
+    async #event_loop_sub(){
+      if(!this.#event_loop_running)
+        return;
+      try {
+        const res = await this.$.event_loop(this.#bd);
+        if(res == -1)
+          throw new Error("Failed to get events");
+        if(this.still_time){
+          let still_timer;
+          const resume = ()=>{
+            clearTimeout(still_timer);
+            still_timer = null;
+            this.#still_timer_resume = null;
+            requestAnimationFrame(()=>this.#event_loop_sub());
+          };
+          this.#still_timer_resume = resume;
+          still_timer = setTimeout(resume, this.still_time*1000)
+          this.still_time = 0;
+        }else{
+          requestAnimationFrame(()=>this.#event_loop_sub());
         }
-      })();
+      } catch(e) {
+        this.#event_loop_running = false;
+        throw e;
+      };
     }
     static vk_key_e = bd_vk_key_e;
     // key is one of Bluray.vk_key_e

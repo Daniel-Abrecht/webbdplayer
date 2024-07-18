@@ -3,6 +3,8 @@ import { GLBDPlayer } from "./bdplayer.js";
 import * as SRROFS from "./fs-static-remote-ro.mjs";
 
 class UIPlayer extends HTMLElement {
+  #last_video_frame_callback = 0;
+  #last_run;
   #running;
   #player;
   #canvas;
@@ -40,7 +42,10 @@ class UIPlayer extends HTMLElement {
     switch(type){
       case 'bluray:': {
         const bluray_rootfs = await SRROFS.Directory.create(location);
-        this.#player = await GLBDPlayer.create(bluray_rootfs, {gl:this.#gl});
+        this.#player = await GLBDPlayer.create(bluray_rootfs, {
+          gl: this.#gl,
+          onframe: (now)=>this.#drawVideoFrame(now),
+        });
         if(this.parentNode)
           this.#player?.connectedCallback?.();
       }; break;
@@ -48,25 +53,37 @@ class UIPlayer extends HTMLElement {
         throw new Error("Not yet implemented");
       }; break;
     }
-    this.main_loop();
+    this.#main_loop();
   }
   async play(){
     await this.#player.play();
   }
-  async main_loop(){
-    const NF = { then: c=>requestAnimationFrame(c) };
-    try {
-      if(this.#running)
-        return;
-      this.#running = true;
-      while(this.#running)
-        this.drawFrame(await NF);
-    } finally {
-      this.#running = false;
-    }
+  #main_loop(){
+    if(this.#running)
+      return;
+    this.#running = true;
+    this.#main_loop_sub();
   }
-  drawFrame(){
-    this.#player?.drawFrame?.();
+  #main_loop_sub(now){
+    if(!this.#running)
+      return;
+    this.#running = false;
+    if(now - this.#last_video_frame_callback > 1000 / 12){
+      // Less than 12fps? Way too slow or not running!
+      this.#drawFrame(now);
+    }
+    this.#running = true;
+    requestAnimationFrame((now)=>this.#main_loop_sub(now));
+  }
+  #drawVideoFrame(now){
+    this.#last_video_frame_callback = now;
+    this.#drawFrame(now);
+  }
+  #drawFrame(now){
+    if(now - this.#last_run < 1000 / 100)
+      return;
+    this.#last_run = now;
+    this.#player?.drawFrame?.(now);
   }
   close(){
     this.#running = false;
