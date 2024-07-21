@@ -7,7 +7,7 @@ void cb_overlay(void *ptr, const BD_OVERLAY*const overlay, ARGB* decoded);
 void cb_overlay_argb(void *ptr, const BD_ARGB_OVERLAY*const overlay);
 
 // We'll use this to decode overlays into and stuff. This is probably bigger than necessary.
-uint8_t scratch_buf[SCRATCH_BUF_SIZE];
+_Alignas(8) uint8_t scratch_buf[SCRATCH_BUF_SIZE];
 
 static void cb_overlay_wrapper(void *ptr, const BD_OVERLAY*const overlay){
   ARGB* result = 0;

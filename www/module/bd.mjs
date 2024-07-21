@@ -77,6 +77,7 @@ async function load_libbluray(){
       await this.$.setup(this.#bd);
       this.overlay_current = [];
       this.overlay_scratch = [];
+      console.log(this.$);
     }
     async $dl_dlopen($libname, b){
       // const libname = cstr2str(this.$.memory.buffer, $libname);
@@ -152,18 +153,23 @@ async function load_libbluray(){
     still_timer_resume(){
       this.#still_timer_resume?.();
     }
-    async $cb_event($event){
-      const dv = new DataView(this.$.memory.buffer, $event);
-      const ev = {
-        type: dv.getUint32(0,true),
-        param: dv.getUint32(4,true),
-      };
-      if(ev.type == bd_event_e.STILL_TIME)
-        this.still_time = ev.param || 60; // ev is infinite, bit it's easier to just delay and retry for a bit longer.
-      //   return; // Nothing to do
-      console.info('event',bd_event_e[ev.type], ev.param);
-      if(ev.type == bd_event_e.READ_ERROR)
-        return -1; // For debbuging
+    async $cb_new_data($events, n, l){
+      const events = new Uint32Array(this.$.memory.buffer, $events, n*2);
+      for(let i=0; i<n*2; i+=2){
+        const type = events[i+0];
+        const param = events[i+1];
+        if(type == bd_event_e.STILL_TIME)
+          this.still_time = param || 60; // 0 is infinite, but it's easier to just delay and retry for a bit longer.
+        //   return; // Nothing to do
+        console.info('event',bd_event_e[type], param);
+        if(type == bd_event_e.READ_ERROR)
+          return -1; // For debbuging
+      }
+      if(l>0){
+        const mp4_stream = new Uint8Array(this.$.memory.buffer, this.$.scratch_buf.value, l);
+        (window.dbgbuf??=[]).push(this.$.memory.buffer.slice(this.$.scratch_buf.value, this.$.scratch_buf.value+l));
+        console.log(mp4_stream);
+      }
       return 0;
     }
     async $cb_overlay($ptr, $overlay, $decoded){

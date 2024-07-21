@@ -58,6 +58,7 @@ SOURCES += extra/setup.c
 SOURCES += extra/mount_get_mountpoint.c
 SOURCES += extra/event_loop.c
 SOURCES += extra/decode_pg_rle.c
+SOURCES += extra/m2ts-mp4-remux.c
 
 WASMCFLAGS += -DHAVE_CONFIG_H
 
@@ -73,6 +74,8 @@ WASMCC = clang-16 --target=wasm32-wasi -D_GNU_SOURCE
 
 BIN += www/build/libbluray.async.wasm
 BIN += www/build/asyncify.mjs
+
+CFLAGS = -std=c11 -Wall -Wextra -pedantic -g
 
 all: $(BIN)
 

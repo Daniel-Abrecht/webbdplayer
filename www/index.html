@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
+<script>
+  addEventListener("error", error=>document.body.appendChild(document.createTextNode(error.message+'\n'+error.error.stack)));
+</script>
   <script type="module" src="module/ui-player.mjs"></script>
 </head>
-<body bgcolor="#888">
+<body bgcolor="#888" style="font-family: monospace; white-space: pre-wrap;">
   <ui-player src="bluray:fs.php/bd/Kaijin%20Kaihatsu-bu%20no%20Kuroitsu-san%20BD2" style="border: 1px solid #000;"></ui-player>
 </body>
 </html>
