@@ -348,24 +348,216 @@ typedef char c32[32];
 MP4_T(avc1, true) // h264
 #undef MP4T
 
+typedef struct AVC_NALU_data_t {
+  uint16_t data_count;
+  uint8_t* data;
+} AVC_NALU_data_t;
 
-#define MP4T(E,L) \
-   E(uint8_t, configuration_version) \
-   E(uint8_t, AVC_profile_indication) \
-   E(uint8_t, profile_compatibility) \
-   E(uint8_t, AVC_level_indication) \
-   E(uint8_t, NALU_len) /* 0xFF + NALU_len - 1 */ \
-   E(uint8_t, SPS_count) /* 0xE0 + sequence_parameter_set_count (=1) */ \
-   E(be16, SPS_length) \
-   L(uint8_t, SPS_list) \
-   E(uint8_t, PPS_count) /* sequence_parameter_set_count (=1) */ \
-   E(be16, PPS_length) \
-   L(uint8_t, PPS_list)
-MP4_T(avcC, false)
-#undef MP4T
+typedef struct mp4_box_avcC_t {
+   uint8_t version;
+   uint8_t profile_indication;
+   uint8_t profile_compatibility;
+   uint8_t level_indication;
+   uint8_t NALU_len;
+   uint8_t SPS_count;
+   AVC_NALU_data_t* SPS;
+   uint8_t PPS_count;
+   AVC_NALU_data_t* PPS;
+   uint8_t chroma_format;
+   uint8_t bit_depth_luma;
+   uint8_t bit_depth_chroma;
+   uint8_t SPSE_count;
+   AVC_NALU_data_t* SPSE;
+} mp4_box_avcC_t;
+
+static enum mp4_write_result mp4_box_avcC_false(
+  struct mp4_outbuf* buf,
+  const mp4_box_avcC_t*restrict const a
+){
+  if( a->NALU_len < 1 || a->NALU_len > 4 || a->SPS_count > 32
+   || a->chroma_format >= 4 || a->bit_depth_luma < 8 || a->bit_depth_luma >= 16
+   || a->bit_depth_luma < 8 || a->bit_depth_luma >= 16
+  ) return MP4WR_INVALID_DATA;
+  size_t size = 8 + 7 + a->SPS_count*2 + a->PPS_count*2;
+  for(int i=0; i<a->SPS_count; i++)
+    size += a->SPS[i].data_count;
+  for(int i=0; i<a->PPS_count; i++)
+    size += a->PPS[i].data_count;
+  if( a->profile_indication == 100 || a->profile_indication == 110
+   || a->profile_indication == 122 || a->profile_indication == 144
+  ){
+    size += 4 + a->SPSE_count * 2;
+    for(int i=0; i<a->SPSE_count; i++)
+      size += a->SPSE[i].data_count;
+  }
+  const enum mp4_write_result ret = mp4_box_write(buf, size, fourcc("avcC"));
+  if(ret < 0)
+    return ret;
+  if(size > buf->offset-buf->size)
+    return MP4WR_BUFFER_TOO_SMALL;
+  memcpy(&buf->data[buf->offset+ 0], &a->version, 1); // Should be 1
+  memcpy(&buf->data[buf->offset+ 1], &a->profile_indication, 1);
+  memcpy(&buf->data[buf->offset+ 2], &a->profile_compatibility, 1);
+  memcpy(&buf->data[buf->offset+ 3], &(uint8_t){0xE0 | a->level_indication}, 1);
+  memcpy(&buf->data[buf->offset+ 4], &(uint8_t){0xFC|(a->NALU_len-1)}, 1);
+  memcpy(&buf->data[buf->offset+ 5], &a->SPS_count, 1);
+  buf->offset += 5;
+  for(int i=0; i<a->SPS_count; i++){
+    const AVC_NALU_data_t*const nalu = &a->SPS[i];
+    memcpy(&buf->data[buf->offset], &(uint16_t){htons(nalu->data_count)}, 2);
+    memcpy(&buf->data[buf->offset+2], nalu->data, nalu->data_count);
+    buf->offset += 2 + nalu->data_count;
+  }
+  memcpy(&buf->data[buf->offset], &a->PPS_count, 1); buf->offset += 1;
+  for(int i=0; i<a->PPS_count; i++){
+    const AVC_NALU_data_t*const nalu = &a->PPS[i];
+    memcpy(&buf->data[buf->offset], &(uint16_t){htons(nalu->data_count)}, 2);
+    memcpy(&buf->data[buf->offset+2], nalu->data, nalu->data_count);
+    buf->offset += 2 + nalu->data_count;
+  }
+  if( a->profile_indication == 100 || a->profile_indication == 110
+   || a->profile_indication == 122 || a->profile_indication == 144
+  ){
+    memcpy(&buf->data[buf->offset+0], &(uint8_t){0xFC|a->chroma_format}, 1);
+    memcpy(&buf->data[buf->offset+1], &(uint8_t){0xF8|(a->bit_depth_luma-8)}, 1);
+    memcpy(&buf->data[buf->offset+2], &(uint8_t){0xF8|(a->bit_depth_chroma-8)}, 1);
+    memcpy(&buf->data[buf->offset], &a->SPSE_count, 1);
+    for(int i=0; i<a->SPSE_count; i++){
+      const AVC_NALU_data_t*const nalu = &a->SPSE[i];
+      memcpy(&buf->data[buf->offset], &(uint16_t){htons(nalu->data_count)}, 2);
+      memcpy(&buf->data[buf->offset+2], nalu->data, nalu->data_count);
+      buf->offset += 2 + nalu->data_count;
+    }
+  }
+  return MP4WR_OK;
+}
 
 #define MP4T(E,L) \
    E(be32, horizontal_spacing) \
    E(be32, vertical_spacing)
 MP4_T(pasp, false)
 #undef MP4T
+
+typedef struct mp4_box_colr_t {
+  fourcc type;
+  union {
+    struct {
+      be16 colour_primaries;
+      be16 transfer_characteristics;
+      be16 matrix_coefficients;
+      bool full_range_flag;
+    } nclx;
+    struct {
+      be16 primaries_index;
+      be16 transfer_function_index;
+      be16 matrix_index;
+    } nclc;
+    struct {
+      size_t icc_length;
+      unsigned char* icc;
+    } rICC, prof;
+  };
+} mp4_box_colr_t;
+
+static enum mp4_write_result mp4_box_colr_false(
+  struct mp4_outbuf* buf,
+  const mp4_box_colr_t*restrict const a
+){
+  size_t size = 8 + 4;
+  if(a->type.u == fourcc("nclx").u) size += 7;
+  else if(a->type.u == fourcc("nclc").u) size += 6;
+  else if(a->type.u == fourcc("rICC").u) size += a->rICC.icc_length;
+  else if(a->type.u == fourcc("prof").u) size += a->prof.icc_length;
+  const enum mp4_write_result ret = mp4_box_write(buf, size, fourcc("colr"));
+  if(ret < 0)
+    return ret;
+  if(size > buf->offset-buf->size)
+    return MP4WR_BUFFER_TOO_SMALL;
+  memcpy(&buf->data[buf->offset], &a->type, 4); buf->offset += 4;
+  if(a->type.u == fourcc("nclx").u){
+    memcpy(&buf->data[buf->offset+0], &a->nclx.colour_primaries, 2);
+    memcpy(&buf->data[buf->offset+2], &a->nclx.transfer_characteristics, 2);
+    memcpy(&buf->data[buf->offset+4], &a->nclx.matrix_coefficients, 2);
+    memcpy(&buf->data[buf->offset+6], &(unsigned char){a->nclx.full_range_flag<<7}, 1);
+    buf->offset += 7;
+  }else if(a->type.u == fourcc("nclc").u){
+    memcpy(&buf->data[buf->offset+0], &a->nclc.primaries_index, 2);
+    memcpy(&buf->data[buf->offset+2], &a->nclc.transfer_function_index, 2);
+    memcpy(&buf->data[buf->offset+4], &a->nclc.matrix_index, 2);
+    buf->offset += 6;
+  }else if(a->type.u == fourcc("rICC").u
+        || a->type.u == fourcc("prof").u
+  ){
+    memcpy(&buf->data[buf->offset], a->rICC.icc, a->rICC.icc_length);
+    buf->offset += a->rICC.icc_length;
+  }
+  return MP4WR_OK;
+}
+
+#define MP4T(E,L) \
+  E(fourcc, version_flags) \
+  E(fourcc, sequence_number) \
+MP4_T(mfhd, false)
+#undef MP4T
+
+enum tfhd_flags {
+  TFHD_FLAG_BASE_DATA_OFFSET_PRESENT = 1<<0,
+  TFHD_FLAG_SAMPLE_DESCRIPTION_INDEX_PRESENT = 1<<1,
+  TFHD_FLAG_DEFAULT_SAMPLE_DURATION_PRESENT = 1<<3,
+  TFHD_FLAG_DEFAULT_SAMPLE_SIZE_PRESENT = 1<<4,
+  TFHD_FLAG_DEFAULT_SAMPLE_FLAGS_PRESENT = 1<<5,
+  TFHD_FLAG_DURATION_IS_EMPTY = 1<<16,
+  TFHD_FLAG_DEFAULT_BASE_IS_MOOF = 1<<17,
+};
+
+typedef struct mp4_box_tfhd_t {
+  uint32_t version_flags;
+  uint32_t track_id;
+  uint64_t base_data_offset;
+  fourcc sample_description_index;
+  fourcc default_sample_duration;
+  fourcc default_sample_size;
+  fourcc default_sample_flags;
+} mp4_box_tfhd_t;
+
+static enum mp4_write_result mp4_box_tfhd_false(
+  struct mp4_outbuf* buf,
+  const mp4_box_tfhd_t*restrict const a
+){
+  const bool f_bdop = a->version_flags & TFHD_FLAG_BASE_DATA_OFFSET_PRESENT;
+  const bool f_sdip = a->version_flags & TFHD_FLAG_SAMPLE_DESCRIPTION_INDEX_PRESENT;
+  const bool f_dsdp = a->version_flags & TFHD_FLAG_DEFAULT_SAMPLE_DURATION_PRESENT;
+  const bool f_dssp = a->version_flags & TFHD_FLAG_DEFAULT_SAMPLE_SIZE_PRESENT;
+  const bool f_dsfp = a->version_flags & TFHD_FLAG_DEFAULT_SAMPLE_FLAGS_PRESENT;
+  // const bool f_die = a->version_flags & TFHD_FLAG_DURATION_IS_EMPTY;
+  // const bool f_dbim = a->version_flags & TFHD_FLAG_DEFAULT_BASE_IS_MOOF;
+  size_t size = 8 + 8 + f_bdop + f_sdip + f_dsdp + f_dssp + f_dsfp;
+  const enum mp4_write_result ret = mp4_box_write(buf, size, fourcc("tfhd"));
+  if(ret < 0)
+    return ret;
+  if(size > buf->offset-buf->size)
+    return MP4WR_BUFFER_TOO_SMALL;
+  memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->version_flags)}, 4); buf->offset += 4;
+  memcpy(&buf->data[buf->offset], &a->track_id, 4); buf->offset += 4;
+  if(f_bdop){
+    memcpy(&buf->data[buf->offset], &(uint32_t){htonll(a->base_data_offset)}, 8);
+    buf->offset += 8;
+  }
+  if(f_sdip){
+    memcpy(&buf->data[buf->offset], &a->sample_description_index, 4);
+    buf->offset += 4;
+  }
+  if(f_dsdp){
+    memcpy(&buf->data[buf->offset], &a->default_sample_duration, 4);
+    buf->offset += 4;
+  }
+  if(f_dssp){
+    memcpy(&buf->data[buf->offset], &a->default_sample_size, 4);
+    buf->offset += 4;
+  }
+  if(f_dsfp){
+    memcpy(&buf->data[buf->offset], &a->default_sample_flags, 4);
+    buf->offset += 4;
+  }
+  return MP4WR_OK;
+}

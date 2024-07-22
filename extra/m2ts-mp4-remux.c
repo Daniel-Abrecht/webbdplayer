@@ -72,8 +72,30 @@ int remux_buffer(int size, unsigned char input[size]){
                     .depth = be16(depth),
                     .p1 = be16(-1),
                   );
-                    // avcC
-                    // colr
+                    mp4_t_box_write(avcC, &remuxer.mp4,
+                      .version = 1,
+                      .profile_indication = 100,
+                      .profile_compatibility = 0,
+                      .level_indication = 41,
+                      .NALU_len = 4,
+                      dlist(SPS, ((AVC_NALU_data_t[]){
+                        {list(((uint8_t[]){ // TODO: Don't hardcode this
+                          0x67, 0x64, 0x00, 0x29, 0xAC, 0xD1, 0x40, 0x78,
+                          0x02, 0x27, 0xE5, 0xC0, 0x50, 0x80, 0x80, 0x80,
+                          0xA0, 0x00, 0x00, 0x7D, 0x20, 0x00, 0x17, 0x70,
+                          0x1C, 0x0C, 0x00, 0x00, 0x42, 0xC1, 0xD8, 0x00,
+                          0x03, 0x93, 0x87, 0x49, 0x26, 0x01, 0xF1, 0x83,
+                          0x11, 0x60
+                        }))},
+                      })),
+                      dlist(PPS, ((AVC_NALU_data_t[]){ // TODO: Don't hardcode this
+                        {list(((uint8_t[]){ 0x68, 0xE9, 0x3B, 0x2C, 0xC0, 0x0B }))},
+                      })),
+                      .chroma_format = 1,
+                      .bit_depth_luma = 0,
+                      .bit_depth_chroma = 0,
+                    );
+                    mp4_t_box_write(colr, &remuxer.mp4, fourcc("nclx"), .nclx={be16(1), be16(1), be16(1)});
                     mp4_t_box_write(pasp, &remuxer.mp4, be32(1), be32(1));
                     mp4_box_commit(&remuxer.mp4);
                   mp4_box_commit(&remuxer.mp4);
