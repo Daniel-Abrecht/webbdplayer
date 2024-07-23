@@ -92,8 +92,8 @@ int remux_buffer(int size, unsigned char input[size]){
                         {list(((uint8_t[]){ 0x68, 0xE9, 0x3B, 0x2C, 0xC0, 0x0B }))},
                       })),
                       .chroma_format = 1,
-                      .bit_depth_luma = 0,
-                      .bit_depth_chroma = 0,
+                      .bit_depth_luma = 8,
+                      .bit_depth_chroma = 8,
                     );
                     mp4_t_box_write(colr, &remuxer.mp4, fourcc("nclx"), .nclx={be16(1), be16(1), be16(1)});
                     mp4_t_box_write(pasp, &remuxer.mp4, be32(1), be32(1));

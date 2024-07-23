@@ -398,10 +398,10 @@ static enum mp4_write_result mp4_box_avcC_false(
   memcpy(&buf->data[buf->offset+ 0], &a->version, 1); // Should be 1
   memcpy(&buf->data[buf->offset+ 1], &a->profile_indication, 1);
   memcpy(&buf->data[buf->offset+ 2], &a->profile_compatibility, 1);
-  memcpy(&buf->data[buf->offset+ 3], &(uint8_t){0xE0 | a->level_indication}, 1);
-  memcpy(&buf->data[buf->offset+ 4], &(uint8_t){0xFC|(a->NALU_len-1)}, 1);
-  memcpy(&buf->data[buf->offset+ 5], &a->SPS_count, 1);
-  buf->offset += 5;
+  memcpy(&buf->data[buf->offset+ 3], &a->level_indication, 1);
+  memcpy(&buf->data[buf->offset+ 4], &(uint8_t){0xFC | (a->NALU_len-1)}, 1);
+  memcpy(&buf->data[buf->offset+ 5], &(uint8_t){0xE0 | a->SPS_count}, 1);
+  buf->offset += 6;
   for(int i=0; i<a->SPS_count; i++){
     const AVC_NALU_data_t*const nalu = &a->SPS[i];
     memcpy(&buf->data[buf->offset], &(uint16_t){htons(nalu->data_count)}, 2);
@@ -421,7 +421,8 @@ static enum mp4_write_result mp4_box_avcC_false(
     memcpy(&buf->data[buf->offset+0], &(uint8_t){0xFC|a->chroma_format}, 1);
     memcpy(&buf->data[buf->offset+1], &(uint8_t){0xF8|(a->bit_depth_luma-8)}, 1);
     memcpy(&buf->data[buf->offset+2], &(uint8_t){0xF8|(a->bit_depth_chroma-8)}, 1);
-    memcpy(&buf->data[buf->offset], &a->SPSE_count, 1);
+    memcpy(&buf->data[buf->offset+3], &a->SPSE_count, 1);
+    buf->offset += 4;
     for(int i=0; i<a->SPSE_count; i++){
       const AVC_NALU_data_t*const nalu = &a->SPSE[i];
       memcpy(&buf->data[buf->offset], &(uint16_t){htons(nalu->data_count)}, 2);
