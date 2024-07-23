@@ -497,7 +497,7 @@ static enum mp4_write_result mp4_box_colr_false(
 
 #define MP4T(E,L) \
   E(fourcc, version_flags) \
-  E(fourcc, sequence_number) \
+  E(fourcc, sequence_number)
 MP4_T(mfhd, false)
 #undef MP4T
 
@@ -515,10 +515,10 @@ typedef struct mp4_box_tfhd_t {
   uint32_t version_flags;
   uint32_t track_id;
   uint64_t base_data_offset;
-  fourcc sample_description_index;
-  fourcc default_sample_duration;
-  fourcc default_sample_size;
-  fourcc default_sample_flags;
+  uint32_t sample_description_index;
+  uint32_t default_sample_duration;
+  uint32_t default_sample_size;
+  uint32_t default_sample_flags;
 } mp4_box_tfhd_t;
 
 static enum mp4_write_result mp4_box_tfhd_false(
@@ -532,7 +532,7 @@ static enum mp4_write_result mp4_box_tfhd_false(
   const bool f_dsfp = a->version_flags & TFHD_FLAG_DEFAULT_SAMPLE_FLAGS_PRESENT;
   // const bool f_die = a->version_flags & TFHD_FLAG_DURATION_IS_EMPTY;
   // const bool f_dbim = a->version_flags & TFHD_FLAG_DEFAULT_BASE_IS_MOOF;
-  size_t size = 8 + 8 + f_bdop + f_sdip + f_dsdp + f_dssp + f_dsfp;
+  size_t size = 8 + 8 + f_bdop*8 + f_sdip*4 + f_dsdp*4 + f_dssp*4 + f_dsfp*4;
   const enum mp4_write_result ret = mp4_box_write(buf, size, fourcc("tfhd"));
   if(ret < 0)
     return ret;
@@ -545,20 +545,98 @@ static enum mp4_write_result mp4_box_tfhd_false(
     buf->offset += 8;
   }
   if(f_sdip){
-    memcpy(&buf->data[buf->offset], &a->sample_description_index, 4);
+    memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->sample_description_index)}, 4);
     buf->offset += 4;
   }
   if(f_dsdp){
-    memcpy(&buf->data[buf->offset], &a->default_sample_duration, 4);
+    memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->default_sample_duration)}, 4);
     buf->offset += 4;
   }
   if(f_dssp){
-    memcpy(&buf->data[buf->offset], &a->default_sample_size, 4);
+    memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->default_sample_size)}, 4);
     buf->offset += 4;
   }
   if(f_dsfp){
-    memcpy(&buf->data[buf->offset], &a->default_sample_flags, 4);
+    memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->default_sample_flags)}, 4);
     buf->offset += 4;
+  }
+  return MP4WR_OK;
+}
+
+#define MP4T(E,L) \
+  E(fourcc, version_flags) /* Set this to 1<<24! */ \
+  E(be64, base_media_decode_time)
+MP4_T(tfdt, false)
+#undef MP4T
+
+enum {
+  TRUN_FLAG_DATA_OFFSET_PRESENT = 1<<0,
+  TRUN_FLAG_FIRST_SAMPLE_FLAGS_PRESENT = 1<<3,
+  TRUN_FLAG_SAMPLE_DURATION_PRESENT = 1<<8,
+  TRUN_FLAG_SAMPLE_SIZE_PRESENT = 1<<9,
+  TRUN_FLAG_SAMPLE_FLAGS_PRESENT = 1<<10,
+  TRUN_FLAG_SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT = 1<<11,
+};
+
+typedef struct mp4_box_trun_sample_t {
+  uint32_t sample_duration;
+  uint32_t sample_size;
+  uint32_t sample_flags;
+  uint32_t sample_composition_time_offset;
+} mp4_box_trun_sample_t;
+
+typedef struct mp4_box_trun_t {
+  uint32_t version_flags;
+  uint32_t data_offset;
+  uint32_t first_sample_flags;
+  uint32_t sample_count;
+  mp4_box_trun_sample_t* sample;
+} mp4_box_trun_t;
+
+static enum mp4_write_result mp4_box_trun_false(
+  struct mp4_outbuf* buf,
+  const mp4_box_trun_t*restrict const a
+){
+  const bool f_dop   = a->version_flags & TRUN_FLAG_DATA_OFFSET_PRESENT;
+  const bool f_fsfp  = a->version_flags & TRUN_FLAG_FIRST_SAMPLE_FLAGS_PRESENT;
+  const bool f_sdp   = a->version_flags & TRUN_FLAG_SAMPLE_DURATION_PRESENT;
+  const bool f_ssp   = a->version_flags & TRUN_FLAG_SAMPLE_SIZE_PRESENT;
+  const bool f_sfp   = a->version_flags & TRUN_FLAG_SAMPLE_FLAGS_PRESENT;
+  const bool f_sctop = a->version_flags & TRUN_FLAG_SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT;
+  size_t size = 8 + 8 + f_dop*4 + f_fsfp*4 + (f_sdp*4 + f_ssp*4 + f_sfp*4 + f_sctop*4) * a->sample_count;
+  const enum mp4_write_result ret = mp4_box_write(buf, size, fourcc("trun"));
+  if(ret < 0)
+    return ret;
+  if(size > buf->offset-buf->size)
+    return MP4WR_BUFFER_TOO_SMALL;
+  memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->version_flags)}, 4); buf->offset += 4;
+  memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->sample_count)}, 4); buf->offset += 4;
+  if(f_dop){
+    memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->data_offset)}, 4);
+    buf->offset += 4;
+  }
+  if(f_fsfp){
+    memcpy(&buf->data[buf->offset], &(uint32_t){htonl(a->first_sample_flags)}, 4);
+    buf->offset += 4;
+  }
+  for(size_t i=0; i<a->sample_count; i++){
+    const mp4_box_trun_sample_t*const s = &a->sample[i];
+    if(f_sdp){
+      memcpy(&buf->data[buf->offset], &(uint32_t){htonl(s->sample_duration)}, 4);
+      buf->offset += 4;
+    }
+    if(f_ssp){
+      memcpy(&buf->data[buf->offset], &(uint32_t){htonl(s->sample_size)}, 4);
+      buf->offset += 4;
+    }
+    if(f_sfp){
+      memcpy(&buf->data[buf->offset], &(uint32_t){htonl(s->sample_flags)}, 4);
+      buf->offset += 4;
+    }
+    if(f_sctop){
+      memcpy(&buf->data[buf->offset], &(uint32_t){htonl(s->sample_composition_time_offset)}, 4);
+      buf->offset += 4;
+    }
   }
   return MP4WR_OK;
 }
