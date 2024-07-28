@@ -13,9 +13,9 @@ static const float YCbCr_conversion_matrix[3][3] = {
 
 ARGB* decode_pg_rle(unsigned w, unsigned h, const BD_PG_RLE_ELEM* rle, const BD_PG_PALETTE_ENTRY palette[256]){
   const size_t size = (size_t)w*h;
-  if(sizeof(ARGB[size]) > SCRATCH_BUF_SIZE)
+  if(sizeof(ARGB[size]) > scratch_size)
     return 0;
-  ARGB* buf = (ARGB*)scratch_buf;
+  ARGB* buf = (ARGB*)scratch_start;
   enum { R,G,B,A };
   for(size_t i=0; i<size;){
     const BD_PG_RLE_ELEM e = *(rle++);

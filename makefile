@@ -55,6 +55,7 @@ SOURCES += libbluray/src/file/dirs_xdg.c
 
 SOURCES += extra/stubs.c
 SOURCES += extra/setup.c
+SOURCES += extra/scratch.c
 SOURCES += extra/mount_get_mountpoint.c
 SOURCES += extra/event_loop.c
 SOURCES += extra/decode_pg_rle.c

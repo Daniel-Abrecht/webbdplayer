@@ -1,31 +1,176 @@
 #include "mp4.h"
 #include "scratch.h"
+#include "remuxer.h"
+#include <stdio.h>
+
+enum {
+  PACKET_SIZE = 192,
+  TS_OFFSET = 4,
+  TS_SIZE = PACKET_SIZE - TS_OFFSET,
+};
+
+enum {
+  PID_PROGRAM_ASSOCIATION_TABLE = 0,
+};
 
 enum state {
   INIT,
   REMUX,
 };
 
+enum avc_decoder_state {
+  AVCD_DETERMINE_START_BYTE,
+  AVCD_DECODE_DATA,
+};
+
+enum {
+  NALU_TYPE_SUPPLEMENTAL_ENHANCEMENT_INFORMATION = 6,
+  NALU_TYPE_SEQUENCE_PARAMETER_SET = 7,
+  NALU_TYPE_PICTURE_PARAMETER_SET = 8,
+  NALU_TYPE_ACCESS_UNIT_DELIMITER = 9,
+  NALU_TYPE_END_OF_SEQUENCE = 10,
+  NALU_TYPE_END_OF_STREAM = 11,
+  NALU_TYPE_FILLER_DATA = 12,
+  NALU_TYPE_SEQUENCE_PARAMETER_SET_EXTENSION = 13,
+  NALU_TYPE_PREFIX_NAL_UNIT = 14,
+  NALU_TYPE_SUBSET_SEQUENCE_PARAMETER_SET = 15,
+};
+
+struct AVCDecoder {
+  unsigned short zero_counter;
+};
+
 struct m2ts_mp4_remuxer {
   enum state state;
+  struct AVCDecoder avc_decoder;
+  signed char type;
+  unsigned char nalu_zero_counter;
+  struct bo tmp;
+  struct bo sps;
+  struct bo pps;
   struct mp4_outbuf mp4;
 };
 
-static struct m2ts_mp4_remuxer remuxer = {
-  .mp4 = {
-    .data = scratch_buf,
-    .size = sizeof(scratch_buf),
-  }
+static struct m2ts_mp4_remuxer remuxer = {0};
+
+struct PES_chunk {
+  short pid;
+  bool fresh;
+  unsigned length;
+  unsigned char* data;
 };
+
+static bool ts_parse(struct PES_chunk* res, unsigned char pkg[restrict TS_SIZE]){
+  res->length = 0;
+  res->data = 0;
+  if(pkg[0] != 0x47) return false; // No sync byte
+  if(pkg[1] & 0x80) return false; // Transport error indicated
+  bool pusi = pkg[1] & 0x40;
+  uint16_t pid = ((pkg[1] & 0x1f) << 8) | pkg[2];
+  unsigned payload_exists = pkg[3] & 0x10;
+  unsigned payload_offset = (pkg[3] & 0x20) ? pkg[4] + 5 : 4;
+  if(payload_offset >= TS_SIZE) return true;
+  if(!payload_exists) return true;
+  pkg += payload_offset;
+  res->pid = pid;
+  res->fresh = pusi;
+  if(pusi){
+    unsigned pes_pid    = pkg[3];
+    // unsigned pes_length = pkg[4] << 8 | pkg[5];
+    unsigned hdr_len    = 6;
+    if(pes_pid != 0xbf){
+      hdr_len += pkg[8] + 3;
+    }
+    res->length = TS_SIZE-payload_offset-hdr_len;
+    res->data = &pkg[hdr_len];
+  }else{
+    res->length = TS_SIZE-payload_offset;
+    res->data = pkg;
+  }
+  return true;
+}
 
 #define MP4_DEFAULT_MATRIX fmat3x3(0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000)
 
-int remux_buffer(int size, unsigned char input[size]){
+struct range {
+  unsigned char* start;
+  unsigned char* end;
+};
+
+struct bo remux_buffer(int size, unsigned char input[size]){
   switch(remuxer.state){
     case INIT: {
+      remuxer.tmp.data = scratch_start;
+      for(unsigned i=0; i+PACKET_SIZE-1<size; i+=PACKET_SIZE){
+        struct PES_chunk pkg;
+        if(!ts_parse(&pkg, &input[i+TS_OFFSET])){
+          fprintf(stderr, "ts_parse failed\n");
+          continue;
+        }
+        if(pkg.pid == 0x1011){ // TODO: Don't hardcode this, video PID may vary
+          const unsigned char *it=pkg.data, *const end=pkg.data+pkg.length;
+          remuxer.type = -1;
+          while(it < end){
+            const unsigned char*const start = it;
+            for(; it<end; it++){
+              const unsigned char c = *it;
+              if(c == 0){
+                if(remuxer.nalu_zero_counter < 3)
+                  remuxer.nalu_zero_counter += 1;
+              }else if(c == 1 && remuxer.nalu_zero_counter >= 2){
+                break;
+              }else{
+                remuxer.nalu_zero_counter = 0;
+              }
+            }
+            if(remuxer.type < 0)
+              remuxer.type = start[0] & 0x1F;
+            const bool sps = remuxer.type == NALU_TYPE_SEQUENCE_PARAMETER_SET;
+            const bool pps = remuxer.type == NALU_TYPE_PICTURE_PARAMETER_SET;
+            const bool of_interest = sps || pps;
+            if(of_interest){
+              const unsigned size = it - start;
+              remuxer.tmp.length += size;
+              memcpy(scratch_start, start, size);
+              // fprintf(stderr, "%p %d %d %u\n", scratch_start, remuxer.type, it == end, size);
+              scratch_mark_used(size);
+            }
+            if(it == end)
+              break;
+            if(of_interest){
+              remuxer.tmp.length -= remuxer.nalu_zero_counter;
+              scratch_free(remuxer.nalu_zero_counter);
+            }
+            if(sps){
+              remuxer.sps = remuxer.tmp;
+              // fprintf(stderr, "%02X %02X %02X %02X %02X %02X %02X %02X\n", remuxer.sps.data[0], remuxer.sps.data[1], remuxer.sps.data[2], remuxer.sps.data[3], remuxer.sps.data[4], remuxer.sps.data[5], remuxer.sps.data[6], remuxer.sps.data[7]);
+              remuxer.tmp.data = scratch_start;
+              remuxer.tmp.length = 0;
+            }else if(pps){
+              remuxer.pps = remuxer.tmp;
+              remuxer.tmp.data = scratch_start;
+              remuxer.tmp.length = 0;
+            }
+            it += 1;
+            remuxer.type = -1;
+            remuxer.nalu_zero_counter = 0;
+          }
+          if(remuxer.sps.data && remuxer.pps.data)
+            break;
+        }
+      }
+      if(!remuxer.sps.data || !remuxer.pps.data)
+        break;
+      // TODO: unescape sps && pps NALu (00 00 03 XX -> 00 00 XX)
+
+      //// Found an SPS & PPS, make MP4 headers ////
       uint16_t depth = 24;
       uint32_t width = 1920;
       uint32_t height = 1080;
+      remuxer.mp4.data = scratch_start;
+      remuxer.mp4.size = scratch_size;
+      scratch_free(remuxer.sps.length + remuxer.pps.length);
+
       mp4_t_box_write(ftyp, &remuxer.mp4, fourcc("isom"), htonll(0x0000020069736F6Dllu), list(((fourcc[]){{"isom"},{"iso2"},{"avc1"},{"mp41"}})) );
       mp4_box_start(&remuxer.mp4, fourcc("moov"));
         mp4_t_box_write(mvhd, &remuxer.mp4,
@@ -78,19 +223,8 @@ int remux_buffer(int size, unsigned char input[size]){
                       .profile_compatibility = 0,
                       .level_indication = 41,
                       .NALU_len = 4,
-                      dlist(SPS, ((AVC_NALU_data_t[]){
-                        {list(((uint8_t[]){ // TODO: Don't hardcode this
-                          0x67, 0x64, 0x00, 0x29, 0xAC, 0xD1, 0x40, 0x78,
-                          0x02, 0x27, 0xE5, 0xC0, 0x50, 0x80, 0x80, 0x80,
-                          0xA0, 0x00, 0x00, 0x7D, 0x20, 0x00, 0x17, 0x70,
-                          0x1C, 0x0C, 0x00, 0x00, 0x42, 0xC1, 0xD8, 0x00,
-                          0x03, 0x93, 0x87, 0x49, 0x26, 0x01, 0xF1, 0x83,
-                          0x11, 0x60
-                        }))},
-                      })),
-                      dlist(PPS, ((AVC_NALU_data_t[]){ // TODO: Don't hardcode this
-                        {list(((uint8_t[]){ 0x68, 0xE9, 0x3B, 0x2C, 0xC0, 0x0B }))},
-                      })),
+                      dlist(SPS, ((AVC_NALU_data_t[]){{ .data_count=remuxer.sps.length, .data=remuxer.sps.data }})),
+                      dlist(PPS, ((AVC_NALU_data_t[]){{ .data_count=remuxer.pps.length, .data=remuxer.pps.data }})),
                       .chroma_format = 1,
                       .bit_depth_luma = 8,
                       .bit_depth_chroma = 8,
@@ -126,17 +260,21 @@ int remux_buffer(int size, unsigned char input[size]){
       remuxer.state = REMUX;
     } break;
     case REMUX: {
+      remuxer.mp4.data = scratch_start;
+      remuxer.mp4.size = scratch_size;
 
     } break;
   }
   if(remuxer.mp4.stack_index){
     while(remuxer.mp4.stack_index)
-      mp4_box_commit(&remuxer.mp4);
-      //mp4_box_rollback(&remuxer.mp4);
-    return -1; // There are still opened atoms!
+      //mp4_box_commit(&remuxer.mp4);
+      mp4_box_rollback(&remuxer.mp4);
   }
   int out_size = remuxer.mp4.offset;
   remuxer.mp4.offset = 0;
-  return out_size;
+  return (struct bo){
+    .data = remuxer.mp4.data,
+    .length = out_size,
+  };
 }
 

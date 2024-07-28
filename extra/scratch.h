@@ -1,4 +1,17 @@
-#define SCRATCH_BUF_SIZE 4*1024*1024*2*2
+#include <stddef.h>
+#include <stdint.h>
 
-// We'll use this to decode overlays into and stuff. This is probably bigger than necessary.
-extern _Alignas(8) uint8_t scratch_buf[SCRATCH_BUF_SIZE];
+extern unsigned char* scratch_start;
+extern size_t scratch_size;
+
+static void scratch_mark_used(size_t size){
+  // size = (size+7) & ~7;
+  scratch_start += size;
+  scratch_size -= size;
+}
+
+static void scratch_free(size_t size){
+  // size = (size+7) & ~7;
+  scratch_start -= size;
+  scratch_size += size;
+}

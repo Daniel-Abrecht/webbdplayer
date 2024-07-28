@@ -153,7 +153,7 @@ async function load_libbluray(){
     still_timer_resume(){
       this.#still_timer_resume?.();
     }
-    async $cb_new_data($events, n, l){
+    async $cb_new_data($events, n, $mp4, mp4_length){
       const events = new Uint32Array(this.$.memory.buffer, $events, n*2);
       for(let i=0; i<n*2; i+=2){
         const type = events[i+0];
@@ -165,9 +165,9 @@ async function load_libbluray(){
         if(type == bd_event_e.READ_ERROR)
           return -1; // For debbuging
       }
-      if(l>0){
-        const mp4_stream = new Uint8Array(this.$.memory.buffer, this.$.scratch_buf.value, l);
-        (window.dbgbuf??=[]).push(this.$.memory.buffer.slice(this.$.scratch_buf.value, this.$.scratch_buf.value+l));
+      if(mp4_length){
+        const mp4_stream = new Uint8Array(this.$.memory.buffer, $mp4, mp4_length);
+        (window.dbgbuf??=[]).push(this.$.memory.buffer.slice($mp4, $mp4+mp4_length));
         console.log(mp4_stream);
       }
       return 0;
