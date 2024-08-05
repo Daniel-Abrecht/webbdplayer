@@ -19,3 +19,14 @@ export class AsyncCreation {
     return self;
   }
 };
+
+export function Future(){
+  let resolve, reject;
+  const p = new Promise((a,b)=>{
+    resolve = a;
+    reject = b;
+  });
+  p.resolve = resolve;
+  p.reject = reject;
+  return p;
+};

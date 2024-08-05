@@ -2,6 +2,7 @@
 import { Bluray } from "./bd.mjs";
 import { FileSystem } from "./fs.mjs";
 import { AsyncCreation } from "./utils.mjs";
+import { MediaSourceHelper } from "./MediaSourceHelper.mjs";
 
 export class GLBDPlayer extends AsyncCreation {
   #bluray;
@@ -12,8 +13,7 @@ export class GLBDPlayer extends AsyncCreation {
   #videoTexture;
   #vao_rect;
   #onframe;
-  #mediaSource;
-  #sourceBuffer;
+  #mediaSourceHelper;
   #source = {
     main_vertex: `\
 #version 300 es
@@ -112,32 +112,9 @@ void main() {
     {
       const video = this.#video;
       video.playbackRate = 4;
-      const reopen = ()=>{
-        if(video.error){
-          console.log(video.error);
-        }
-        const mediaSource = new MediaSource();
-        this.#mediaSource = mediaSource;
-        mediaSource.addEventListener("sourceopen", ()=>{
-          const mimeCodec = 'video/mp4; codecs="avc1.42E01E"';
-          this.#sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
-          this.#sourceBuffer.mode = "sequence";
-          try { video.play(); } catch(e) {}
-        });
-        try {
-          if('srcObject' in video)
-            video.srcObject = mediaSource;
-        } catch(e) {}
-        if(!video.srcObject)
-          video.src = URL.createObjectURL(mediaSource);
-        try { video.play(); } catch(e) {}
-      };
-      video.addEventListener("error", reopen);
-      reopen();
-      this.#bluray.onvideodata = async(data) => {
-        console.log(this.#mediaSource.readyState);
-        this.#sourceBuffer.appendBuffer(data);
-      };
+      this.#mediaSourceHelper = new MediaSourceHelper();
+      this.#mediaSourceHelper.setVideo(video)
+      this.#bluray.onvideodata = (data)=>this.#mediaSourceHelper.appendData(data);
     }
   }
   #onkeyup = function(event){
