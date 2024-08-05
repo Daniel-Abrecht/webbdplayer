@@ -12,6 +12,8 @@ export class GLBDPlayer extends AsyncCreation {
   #videoTexture;
   #vao_rect;
   #onframe;
+  #mediaSource;
+  #sourceBuffer;
   #source = {
     main_vertex: `\
 #version 300 es
@@ -105,8 +107,37 @@ void main() {
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
       vao.a_texcoord = buffer;
       this.#vao_rect = vao;
-      this.#video.requestVideoFrameCallback?.((now, meta)=>this.#updateVideoFrame(now, meta))
-      this.#video.src = "sample/out.mp4";
+      this.#video.requestVideoFrameCallback?.((now, meta)=>this.#updateVideoFrame(now, meta));
+    }
+    {
+      const video = this.#video;
+      video.playbackRate = 4;
+      const reopen = ()=>{
+        if(video.error){
+          console.log(video.error);
+        }
+        const mediaSource = new MediaSource();
+        this.#mediaSource = mediaSource;
+        mediaSource.addEventListener("sourceopen", ()=>{
+          const mimeCodec = 'video/mp4; codecs="avc1.42E01E"';
+          this.#sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
+          this.#sourceBuffer.mode = "sequence";
+          try { video.play(); } catch(e) {}
+        });
+        try {
+          if('srcObject' in video)
+            video.srcObject = mediaSource;
+        } catch(e) {}
+        if(!video.srcObject)
+          video.src = URL.createObjectURL(mediaSource);
+        try { video.play(); } catch(e) {}
+      };
+      video.addEventListener("error", reopen);
+      reopen();
+      this.#bluray.onvideodata = async(data) => {
+        console.log(this.#mediaSource.readyState);
+        this.#sourceBuffer.appendBuffer(data);
+      };
     }
   }
   #onkeyup = function(event){

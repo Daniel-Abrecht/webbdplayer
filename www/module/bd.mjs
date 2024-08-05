@@ -167,6 +167,7 @@ async function load_libbluray(){
       }
       if(mp4_length){
         const mp4_stream = new Uint8Array(this.$.memory.buffer, $mp4, mp4_length);
+        this.onvideodata?.(mp4_stream);
         (window.dbgbuf??=[]).push(this.$.memory.buffer.slice($mp4, $mp4+mp4_length));
         console.log(mp4_stream);
       }

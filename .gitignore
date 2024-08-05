@@ -4,3 +4,4 @@ build/
 *.m2ts
 *.h264
 www/sample/
+tmp/
