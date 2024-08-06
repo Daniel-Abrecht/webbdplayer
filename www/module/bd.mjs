@@ -59,9 +59,11 @@ async function load_libbluray(){
   return class Bluray extends WASI_Base {
     static wasm_module = module;
     #bd;
+    #event_loop_sub;
     #event_loop_running = false;
     #still_timer_resume;
     async init(opts, [device_path, keyfile_path]=[]){
+      this.#event_loop_sub = ()=>{this.#_event_loop_sub()};
       await super.init(opts);
       if(!device_path){
         this.#bd = await this.$.bd_init();
@@ -96,7 +98,7 @@ async function load_libbluray(){
       this.#event_loop_running = true;
       this.#event_loop_sub();
     }
-    async #event_loop_sub(){
+    async #_event_loop_sub(){
       if(!this.#event_loop_running)
         return;
       try {
@@ -109,13 +111,13 @@ async function load_libbluray(){
             clearTimeout(still_timer);
             still_timer = null;
             this.#still_timer_resume = null;
-            requestAnimationFrame(()=>this.#event_loop_sub());
+            requestAnimationFrame(this.#event_loop_sub);
           };
           this.#still_timer_resume = resume;
           still_timer = setTimeout(resume, this.still_time*1000)
           this.still_time = 0;
         }else{
-          requestAnimationFrame(()=>this.#event_loop_sub());
+          requestAnimationFrame(this.#event_loop_sub);
         }
       } catch(e) {
         this.#event_loop_running = false;

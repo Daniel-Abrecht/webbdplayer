@@ -69,7 +69,7 @@ WASMCFLAGS += -Iextra -fvisibility=default
 WASMCFLAGS += -Ilibbluray/src/ -Ilibbluray/src/libbluray/
 WASMCFLAGS += -std=c99
 WASMCFLAGS += -fstack-protector-all
-OPTIMIZE += -O2 # -g
+OPTIMIZE = -O2 # -g
 
 WASMCC = clang-16 --target=wasm32-wasi -D_GNU_SOURCE
 

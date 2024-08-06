@@ -27,7 +27,7 @@ export class MediaSourceHelper {
         continue;
       const data = this.#chunk_list.shift();
       if(data){
-        console.log('Got data', data.byteLength);
+        // console.log('Got data', data.byteLength);
         this.#sourceBuffer.appendBuffer(data);
       }else{
         this.#waitdata = true;
@@ -70,7 +70,6 @@ export class MediaSourceHelper {
       this.#sourceBuffer.mode = "sequence";
       this.#sourceBuffer.onupdateend = this.#onupdateend;
       this.#chunk_list.unshift(this.#header);
-      console.log(this.#chunk_list);
       this.#waitdone.resolve();
     };
     this.#mediaSource.onsourceclose = ()=>{this.reset();};

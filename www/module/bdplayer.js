@@ -111,7 +111,7 @@ void main() {
     }
     {
       const video = this.#video;
-      video.playbackRate = 4;
+      // video.playbackRate = 4;
       this.#mediaSourceHelper = new MediaSourceHelper();
       this.#mediaSourceHelper.setVideo(video)
       this.#bluray.onvideodata = (data)=>this.#mediaSourceHelper.appendData(data);

@@ -1,9 +1,10 @@
 #include "mp4.h"
 #include "scratch.h"
 #include "remuxer.h"
-#include <stdio.h>
+// #include <stdio.h>
 
-#define dbg_print(...) fprintf(stderr, __VA_ARGS__)
+// #define dbg_print(...) fprintf(stderr, __VA_ARGS__)
+#define dbg_print(...)
 
 enum {
   PACKET_SIZE = 192,
@@ -254,7 +255,7 @@ struct bo remux_buffer(int size, unsigned char input[size]){
           );
           mp4_box_start(&remuxer.mp4, fourcc("mdia"));
             mp4_t_box_write(mdhd, &remuxer.mp4,
-              .time_scale = be32(90000), // https://stackoverflow.com/questions/77803940/diffrence-between-mvhd-box-timescale-and-mdhd-box-timescale-in-isobmff-format
+              .time_scale = be32(90000*10), // https://stackoverflow.com/questions/77803940/diffrence-between-mvhd-box-timescale-and-mdhd-box-timescale-in-isobmff-format
             );
             mp4_t_box_write(hdlr, &remuxer.mp4,
               .subtype = fourcc("vide"),
@@ -409,10 +410,11 @@ struct bo remux_buffer(int size, unsigned char input[size]){
           mp4_box_commit(&remuxer.mp4);
         mp4_box_commit(&remuxer.mp4);
         mp4_box_start(&remuxer.mp4, fourcc("mdat"));
-        for(unsigned n=access_unit_count; n; ){
+        for(int n=access_unit_count; n>0; ){
           int type = -1;
           unsigned char* p_chunk_size = 0;
-          while(c-- > remuxer.video_chunks){
+          while(c > remuxer.video_chunks){
+            c -= 1;
             struct video_chunk* vc = &c->video;
             if(vc->is_start)
               type = vc->data[0] & 0x1F;
@@ -424,10 +426,9 @@ struct bo remux_buffer(int size, unsigned char input[size]){
               memcpy(trun_sample+4, &be32(sample_size), 4);
               trun_sample += 8;
               sample_size = 0;
-              type = -1;
               break;
             }
-            if(type <= 0 || type == NALU_TYPE_FILLER_DATA || type == NALU_TYPE_ACCESS_UNIT_DELIMITER)
+            if(type <= 0 || type == NALU_TYPE_FILLER_DATA || type == NALU_TYPE_ACCESS_UNIT_DELIMITER /*|| type == NALU_TYPE_END_OF_STREAM*/)
               continue;
             if(vc->is_start){
               // if(p_chunk_size)
@@ -451,6 +452,8 @@ struct bo remux_buffer(int size, unsigned char input[size]){
               memcpy(p_chunk_size, &be32(size), 4);
               p_chunk_size = 0;
             }
+            // if(vc->is_start && type == NALU_TYPE_ACCESS_UNIT_DELIMITER)
+            //   break;
           }
         }
         if(remuxer.mp4.offset - remuxer.mp4.stack[remuxer.mp4.stack_index-1] <= 8){
@@ -459,7 +462,13 @@ struct bo remux_buffer(int size, unsigned char input[size]){
         }else{
           mp4_box_commit(&remuxer.mp4);
         }
-        remuxer.video_chunks = remuxer.chunks_top; // TODO: store remaining
+        {
+          const int s = c - remuxer.video_chunks;
+          // dbg_print("%d %zu %p %p %p\n", s, (uint8_t*)remuxer.chunks_top-(uint8_t*)remuxer.video_chunks, remuxer.video_chunks, c, remuxer.chunks_top);
+          memmove(remuxer.chunks_top-s, remuxer.video_chunks, s*sizeof(*remuxer.video_chunks));
+          remuxer.video_chunks = remuxer.chunks_top-s;
+          //remuxer.video_chunks = remuxer.chunks_top;
+        }
       }
     } break;
 
@@ -481,3 +490,5 @@ struct bo remux_buffer(int size, unsigned char input[size]){
   return r;
 }
 
+void remux_post(void){
+}

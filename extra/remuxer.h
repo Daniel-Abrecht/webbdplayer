@@ -5,3 +5,4 @@ struct bo {
 };
 
 struct bo remux_buffer(int size, unsigned char* input);
+void remux_post(void);
