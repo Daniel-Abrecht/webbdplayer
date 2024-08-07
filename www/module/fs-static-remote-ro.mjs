@@ -149,7 +149,7 @@ class FileDescription {
   tell(){
     return this.offset;
   }
-  async pread(size, offset){
+  pread(size, offset){
     const file_size = BigInt(this.file.info.size);
     if(offset >= file_size)
       return [];
@@ -157,10 +157,10 @@ class FileDescription {
       size = file_size-offset;
     if(this.file.info.content)
       return [this.file.info.content.subarray(Number(offset), Number(size))];
-    return await this.file.load_data(offset, size);
+    return this.file.load_data(offset, size);
   }
-  async read(size){
-    const result = await this.pread(size, this.offset);
+  read(size){
+    const result = this.pread(size, this.offset);
     this.offset += size;
     return result;
   }
@@ -220,24 +220,77 @@ function min(a,b){
   return a < b ? a : b;
 }
 
+const FAST_CACHE_ENTRIES = 1024;
+
 export class File extends EntryMixin(AbstractFile){
+  #page_count;
+  #fast_cache;
+  #fast_cache_indeces;
+  #fast_cache_dublicates;
   async init(...x){
     await super.init(...x);
     if(this.info.type !== 'file')
       throw new Error("Not a file!");
+    this.#page_count = ((BigInt(this.info.size)) + page_size - 1n) / page_size;
+    this.#fast_cache = new Array(Number(this.#page_count));
+    this.#fast_cache_indeces = [];
+    this.#fast_cache_dublicates = 0;
   }
-  async load_data(offset, size){
+  load_data(offset, size){
+    if(this.info.size <= offset)
+      return [];
     const page_start = offset / page_size;
-    const page_count = (min(offset + size + read_ahead * page_size, BigInt(this.info.size)) + page_size - 1n) / page_size - page_start;
-    const result = await this.api.load(this.path, page_start, page_count);
-    if(result[0]){
-      if(result[0].byteLength <= Number(offset-page_start*page_size)){
-        result.shift();
-      }else{
-        result[0] = result[0].subarray(Number(offset-page_start*page_size));
-      }
+    const pages_requested = (offset + size + page_size - 1n) / page_size;
+    const pages_needed_end = Number(min(pages_requested, this.#page_count));
+    const o = Number(offset-page_start*page_size);
+    let i = Number(page_start);
+    const cached = [];
+    for(; i < pages_needed_end; i++){
+      const e = this.#fast_cache[i];
+      if(!e) break;
+      cached.push(e);
+      e.fci_count++;
+      this.#fast_cache_indeces.push(i);
+      this.#fast_cache_dublicates++;
     }
-    //console.log(offset, size, new Blob(result));
-    return result;
+    if(i == pages_needed_end){
+      // console.log(o, cached.length, [...cached], this.#fast_cache);
+      if(o) cached[0] = cached[0].subarray(o);
+      // console.log(cached.length, [...cached]);
+      return cached;
+    }
+    const pages_to_be_loaded = Number(min(pages_requested + read_ahead, this.#page_count)) - i;
+    return (async()=>{
+      // console.log(i, cached.length, pages_to_be_loaded);
+      const result = await this.api.load(this.path, BigInt(i), pages_to_be_loaded);
+      for(let j=0; j<pages_to_be_loaded; j++){
+        let e = this.#fast_cache[i+j];
+        if(e){
+          e.fci_count++;
+          this.#fast_cache_dublicates++;
+          result[j] = e;
+        }else{
+          e = result[j];
+          if(e){
+            this.#fast_cache[i+j] = e;
+            e.fci_count = 1;
+          }
+        }
+        this.#fast_cache_indeces.push(i+j);
+      }
+      while(this.#fast_cache_indeces.length > FAST_CACHE_ENTRIES+this.#fast_cache_dublicates){
+        const i = this.#fast_cache_indeces.shift();
+        const e = this.#fast_cache[i];
+        if(!--e.fci_count){
+          delete this.#fast_cache[i];
+        }else{
+          this.#fast_cache_dublicates--;
+        }
+      }
+      result.splice(0,0,...cached);
+      if(o) result[0] = result[0].subarray(o);
+      //console.log(offset, size, new Blob(result));
+      return result;
+    })();
   }
 };

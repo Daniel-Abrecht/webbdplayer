@@ -12,45 +12,49 @@ export class AbstractDirectory extends Dirent {};
 export class AbstractFile extends Dirent {};
 //export class AbstractSymlink {};
 
+// TODO: make more things conditionally async
+
 class FileDescription {
   constructor(fse){
     this.fs = fse;
     this.fd = null;
     this.opened = false;
   }
-  async lookup(...x){
-    return await this.fs.lookup(...x);
+  lookup(...x){
+    return this.fs.lookup(...x);
   }
   async open(mode){
     if(this.fs.dirent?.open)
       this.fd = await this.fs.dirent.open(this, mode);
     this.opened = true;
   }
-  async readdir(index){
+  // Note: The following methods may or may not return promises.
+  // Sometimes, waiting for promises would be too slow. The asyncify stuff may have to unwind the stack when things aren't sync.
+  readdir(index){
     if(this.fs.dirent?.readdir)
-      return await this.fs.dirent.readdir(Number(index));
+      return this.fs.dirent.readdir(Number(index));
     // TODO: check mountpoint paths
     return [];
   }
-  async seek(offset, whence){
+  seek(offset, whence){
     if(!this.fd?.seek)
       throw new FileSystemError('ESPIPE',"Illegal seek");
-    return await this.fd.seek(offset, whence);
+    return this.fd.seek(offset, whence);
   }
-  async tell(){
+  tell(){
     if(!this.fd?.tell)
       throw new FileSystemError('ESPIPE',"FIle not seekable");
-    return await this.fd.tell();
+    return this.fd.tell();
   }
-  async pread(size, offset){
+  pread(size, offset){
     if(!this.fd?.read)
       throw new FileSystemError('EINVAL',"File is not readable");
-    return await this.fd.read(size, offset);
+    return this.fd.read(size, offset);
   }
-  async read(size){
+  read(size){
     if(!this.fd?.read)
       throw new FileSystemError('EINVAL',"File is not readable");
-    return await this.fd.read(size);
+    return this.fd.read(size);
   }
 };
 
@@ -67,7 +71,7 @@ class FileSystemEntry {
     }
     this.dirent = dirent;
   }
-  async lookup(path){
+  lookup(path){
     path = FileSystem.normalize_path(path, {allow_relative: true});
     if(!path.length)
       return this;
@@ -75,9 +79,9 @@ class FileSystemEntry {
       throw new NotADirectoryError(`Not a directory: ${this.path}/${path.join('/')}`);
     if(path.length === 1 && path[0] === '')
       return this;
-    return await this.fs.lookup([this.path,path]);
+    return this.fs.lookup([this.path,path]);
   }
-  async lookup_direct(path){
+  lookup_direct(path){
     path = FileSystem.normalize_path(path);
     if(!path.length)
       return this;
@@ -86,18 +90,30 @@ class FileSystemEntry {
     if(path.length === 1 && path[0] === '')
       return this;
     let entry = this;
-    while(path.length)
-      entry = await entry.get_direct(path.shift());
+    while(path.length){
+      entry = entry.get_direct(path.shift());
+      if(entry instanceof Promise){
+        entry = (async(entry)=>{
+          while(path.length)
+            entry = (await entry).get_direct(path.shift());
+          return entry;
+        })(entry);
+        break;
+      }
+    }
     return entry;
   }
-  async get_direct(name){
+  get_direct(name){
     // console.log('get_direct', this.path,name);
     if(!this.dirent?.lookup)
       throw new FileNotFoundError(`File not found: ${this.path}/${name}`);
-    const dirent = await this.dirent.lookup(name);
-    if(!dirent)
-      throw new FileNotFoundError(`File not found: ${this.path}${name}`);
-    return new FileSystemEntry(this.fs, [this.path,name], dirent);
+    const dirent = this.dirent.lookup(name);
+    const f = (dirent)=>{
+      if(!dirent)
+        throw new FileNotFoundError(`File not found: ${this.path}${name}`);
+      return new FileSystemEntry(this.fs, [this.path,name], dirent);
+    }
+    return dirent instanceof Promise ? dirent.then(f) : f(dirent);
   }
   async open(mode){
     const fd = new FileDescription(this);
@@ -132,7 +148,7 @@ export class FileSystem {
     if(!mount[1].fs.length)
       this.#mountpoints.splice(mount[0], 1);
   }
-  async lookup(path){
+  lookup(path){
     path = FileSystem.normalize_path(path);
     let normalized = path.join('/');
     if(normalized.at(-1) !== '/')
@@ -141,7 +157,7 @@ export class FileSystem {
       if(!normalized.startsWith(mp.path+'/'))
         continue;
       path.splice(0,mp.path.split('/').length);
-      return await mp.fs[0].lookup_direct(path);
+      return mp.fs[0].lookup_direct(path);
     }
     let path_exists = normalized === '/';
     if(!path_exists)

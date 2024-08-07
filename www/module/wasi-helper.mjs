@@ -146,9 +146,18 @@ for(const [k,v] of Object.entries([
   wasi_filetype[v] = +k;
 }
 
-export async function exception_to_errno_a(f, d='EINVAL'){
+export function exception_to_errno_a(f, d='EINVAL'){
   try {
-    return await f();
+    const res = f();
+    if(res instanceof Promise){
+      return res.catch(e=>{
+        console.groupCollapsed(e.message);
+        console.error(e);
+        console.groupEnd();
+        return wasi_errno[e.code] ?? wasi_errno[d];
+      });
+    }
+    return res;
   } catch(e) {
     console.groupCollapsed(e.message);
     console.error(e);
@@ -336,51 +345,60 @@ export class WASI_Base extends AsyncCreation {
       throw new WASI_Error('EINVAL', "File is not writable");
     return await stat.fs?.write(buf);
   }
-  async $fd_read(fd, $iovs, count, $nread){
-    return await exception_to_errno_a(async()=>{
+  $fd_read(fd, $iovs, count, $nread){
+    return exception_to_errno_a(()=>{
       const stat = this.#fdinfo[fd];
       if(!stat.fs?.read)
         throw new WASI_Error('EINVAL', "File is not readable");
       const iovs = this.getiovs($iovs, count);
       const size = iovs.reduce((a,b)=>a+BigInt(b.byteLength), 0n);
-      const result = await stat.fs.read(size);
-      const dv = new DataView(this.$.memory.buffer);
-      let read = 0;
-      while(iovs.length && result.length){
-        const dst = iovs[0];
-        const src = result[0];
-        if(src.byteLength <= dst.byteLength){
-          dst.set(src);
-          iovs[0] = dst.subarray(src.byteLength);
-          result.shift();
-          if(src.byteLength == dst.byteLength)
+      const result = stat.fs.read(size);
+      const f = result=>{
+        const dv = new DataView(this.$.memory.buffer);
+        let read = 0;
+        while(iovs.length && result.length){
+          const dst = iovs[0];
+          const src = result[0];
+          if(src.byteLength <= dst.byteLength){
+            dst.set(src);
+            iovs[0] = dst.subarray(src.byteLength);
+            result.shift();
+            if(src.byteLength == dst.byteLength)
+              iovs.shift();
+            read += src.byteLength;
+          }else{
+            dst.set(src.subarray(0,dst.byteLength));
+            result[0] = src.subarray(dst.byteLength);
             iovs.shift();
-          read += src.byteLength;
-        }else{
-          dst.set(src.subarray(0,dst.byteLength));
-          result[0] = src.subarray(dst.byteLength);
-          iovs.shift();
-          read += dst.byteLength;
+            read += dst.byteLength;
+          }
         }
-      }
-      dv.setUint32($nread, read, true);
-      return 0;
+        dv.setUint32($nread, read, true);
+        return 0;
+      };
+      return result instanceof Promise ? result.then(f) : f(result);
     });
   }
-  async $fd_seek(fd, offset, whence, $new_offset){
-    return await exception_to_errno_a(async()=>{
+  $fd_seek(fd, offset, whence, $new_offset){
+    return exception_to_errno_a(()=>{
       const stat = this.#fdinfo[fd];
       const dv = new DataView(this.$.memory.buffer);
-      const new_offset = await stat.fs.seek(offset, ['SET','CUR','END'][whence]);
-      dv.setBigUint64($new_offset, new_offset, true);
+      const new_offset = stat.fs.seek(offset, ['SET','CUR','END'][whence]);
+      const f = new_offset=>{
+        dv.setBigUint64($new_offset, new_offset, true);
+      };
+      return new_offset instanceof Promise ? new_offset.then(f) : f(new_offset);
     });
   }
-  async $fd_tell(fd, $offset){
-    return await exception_to_errno_a(async()=>{
+  $fd_tell(fd, $offset){
+    return exception_to_errno_a(()=>{
       const stat = this.#fdinfo[fd];
       const dv = new DataView(this.$.memory.buffer);
-      const offset = await stat.fs.tell();
-      dv.setBigUint64($offset, offset, true);
+      const offset = stat.fs.tell();
+      const f = offset=>{
+        dv.setBigUint64($offset, offset, true);
+      };
+      return offset instanceof Promise ? offset.then(f) : f(offset);
     });
   }
   async alloc_str(str){
