@@ -2,9 +2,24 @@
 <html>
 <head>
 <script>
-  addEventListener("error", error=>document.body.appendChild(document.createTextNode(error.message+'\n'+error.error.stack)));
+  function logerror(...x){
+    x = x.map(m=>{
+      if(m instanceof ErrorEvent){
+        m = m.error || m;
+        return m.message+'\n'+m.stack;
+      }
+      if(m instanceof PromiseRejectionEvent)
+        m = m.reason;
+      if(m instanceof Error)
+        return m.message+'\n'+m.stack;
+      return `${m}`;
+    }).join('\t');
+    document.body.appendChild(document.createTextNode(x));
+  }
+  addEventListener("unhandledrejection", logerror);
+  addEventListener("error", logerror)
 </script>
-  <script type="module" src="module/ui-player.mjs"></script>
+  <script src="dist/webbdplayer.js" async></script>
 </head>
 <body bgcolor="#888" style="font-family: monospace; white-space: pre-wrap;">
   <ui-player src="bluray:fs.php/bd/Kaijin%20Kaihatsu-bu%20no%20Kuroitsu-san%20BD2" style="border: 1px solid #000;"></ui-player>

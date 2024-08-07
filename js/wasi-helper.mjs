@@ -1,5 +1,5 @@
 "use strict";
-import * as Asyncify from "../build/asyncify.mjs";
+import * as Asyncify from "../asyncify/asyncify.mjs";
 import { AsyncCreation } from "./utils.mjs";
 
 export function cstr2str(buf, offset, len){

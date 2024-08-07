@@ -1,7 +1,7 @@
-build/
 *.o
-*.mp4
-*.m2ts
-*.h264
-www/sample/
+.gdb_history
+build/
+www/dist/
 tmp/
+node_modules/
+package-lock.json

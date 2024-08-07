@@ -73,16 +73,19 @@ OPTIMIZE = -O2 # -g
 
 WASMCC = clang-16 --target=wasm32-wasi -D_GNU_SOURCE
 
-BIN += www/build/libbluray.async.wasm
-BIN += www/build/asyncify.mjs
-
 CFLAGS = -std=c11 -Wall -Wextra -pedantic -g
 
-all: $(BIN)
+all: www/dist/webbdplayer.js
 
-#build/o/libbluray/%.c.o:
+www/dist/webbdplayer.js: $(wildcard js/*.mjs)
+www/dist/webbdplayer.js: build/libbluray.async.wasm
+www/dist/webbdplayer.js: webpack.config.mjs
 
-www/build/libbluray.wasm: $(OBJECTS)
+www/dist/webbdplayer.js:
+	webpack
+	touch $@
+
+build/libbluray.wasm: $(OBJECTS)
 	mkdir -p $(dir $@)
 	$(WASMCC) $(OPTIMIZE) -Wl,--error-limit=0 \
 	   -Wl,--export-dynamic -Wl,--allow-undefined \
@@ -93,15 +96,12 @@ www/build/libbluray.wasm: $(OBJECTS)
 %.async.wasm: %.wasm
 	wasm-opt $(OPTIMIZE) --asyncify $< -o $@
 
-www/build/asyncify.mjs: asyncify/asyncify.mjs
-	mkdir -p $(dir $@)
-	cp $< $@
-
 build/o/%.c.o: %.c
 	mkdir -p $(dir $@)
 	$(WASMCC) $(WASMCFLAGS) $(OPTIMIZE) -c -o $@ $^
 
 clean:
 	rm -f $(OBJECTS)
-	rm -f www/module/build/libbluray.wasm
-	rm -f www/module/build/libbluray.async.wasm
+	rm -f build/libbluray.wasm
+	rm -f build/libbluray.async.wasm
+	rm -f www/dist/webbdplayer.js

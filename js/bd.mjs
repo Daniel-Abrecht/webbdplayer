@@ -1,5 +1,6 @@
 "use strict";
 import { WASI_Base } from "./wasi-helper.mjs";
+import libbluray from "../build/libbluray.async.wasm";
 
 function mkenum(o){
   for(let i=0; i<o.length; i++)
@@ -55,7 +56,7 @@ Object.seal(bd_vk_key_e);
 Object.freeze(bd_vk_key_e);
 
 async function load_libbluray(){
-  const module = await WebAssembly.compileStreaming(fetch("build/libbluray.async.wasm"));
+  const module = await WebAssembly.compile(libbluray);
   return class Bluray extends WASI_Base {
     static wasm_module = module;
     #bd;
@@ -170,7 +171,7 @@ async function load_libbluray(){
       if(mp4_length){
         const mp4_stream = new Uint8Array(this.$.memory.buffer, $mp4, mp4_length);
         const promise = this.onvideodata?.(mp4_stream);
-        (window.dbgbuf??=[]).push(this.$.memory.buffer.slice($mp4, $mp4+mp4_length));
+        // (window.dbgbuf??=[]).push(this.$.memory.buffer.slice($mp4, $mp4+mp4_length));
         // console.log(mp4_stream);
         return promise;
       }
