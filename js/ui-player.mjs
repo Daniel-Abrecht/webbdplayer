@@ -3,6 +3,7 @@ import { GLBDPlayer } from "./bdplayer.js";
 import * as SRROFS from "./fs-static-remote-ro.mjs";
 
 class UIPlayer extends HTMLElement {
+  #x(){} // babel workaround
   #last_video_frame_callback = 0;
   #last_run;
   #running;

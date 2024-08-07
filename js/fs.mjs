@@ -123,6 +123,7 @@ class FileSystemEntry {
 }
 
 export class FileSystem {
+  #x(){} // babel workaround
   #mountpoints = [];
   get_mount(path){
     path = FileSystem.normalize_path([path,'/']).join('/').replace(/\/$/,'');

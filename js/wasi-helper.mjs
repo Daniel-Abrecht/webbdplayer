@@ -108,16 +108,16 @@ Object.freeze(wasi_rights);
 export function wasi_rights_decompose(x){
   const res = [];
   for(let i=0; i<wasi_rights.length; i++)
-    if(x & (1n<<BigInt(i)))
+    if(x & (BigInt(1)<<BigInt(i)))
       res.push(wasi_rights[i]);
   return res;
 }
 export function wasi_rights_compose(x){
-  let res = 0n;
+  let res = BigInt(0);
   for(const k of x){
     if(!wasi_rights[k])
       throw new Error(`Invalid wasi_right "${k}"`);
-    res |= 1n<<BigInt(wasi_rights[k]);
+    res |= BigInt(1)<<BigInt(wasi_rights[k]);
   }
   return res;
 }
@@ -176,6 +176,7 @@ export class WASI_Error extends Error {
 let seq=0;
 
 export class WASI_Base extends AsyncCreation {
+  #x(){} // babel workaround
   #lock = null;
   #fdinfo = [
     { type: wasi_filetype.REGULAR_FILE, rights: PIPE_RO_DEFAULT_RIGHTS }, // stdin
@@ -351,7 +352,7 @@ export class WASI_Base extends AsyncCreation {
       if(!stat.fs?.read)
         throw new WASI_Error('EINVAL', "File is not readable");
       const iovs = this.getiovs($iovs, count);
-      const size = iovs.reduce((a,b)=>a+BigInt(b.byteLength), 0n);
+      const size = iovs.reduce((a,b)=>a+BigInt(b.byteLength), BigInt(0));
       const result = stat.fs.read(size);
       const f = result=>{
         const dv = new DataView(this.$.memory.buffer);
@@ -412,8 +413,8 @@ export class WASI_Base extends AsyncCreation {
     // Note: No idea how precision is supposed to be used...
     const dv = new DataView(this.$.memory.buffer);
     switch(clock_id){
-      case 0: dv.setBigUint64($result, BigInt(Date.now())*1000000n, true); break;
-      default: dv.setBigUint64($result, BigInt(performance.now())*1000000n, true); break;
+      case 0: dv.setBigUint64($result, BigInt(Date.now())*BigInt(1000000), true); break;
+      default: dv.setBigUint64($result, BigInt(performance.now())*BigInt(1000000), true); break;
     }
     return 0;
   }

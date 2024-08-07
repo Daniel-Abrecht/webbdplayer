@@ -1,6 +1,7 @@
 import { Future } from "./utils.mjs";
 
 export class MediaSourceHelper {
+  #x(){} // babel workaround
   #mediaSource;
   #sourceBuffer;
   #header;

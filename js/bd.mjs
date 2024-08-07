@@ -59,6 +59,7 @@ async function load_libbluray(){
   const module = await WebAssembly.compile(libbluray);
   return class Bluray extends WASI_Base {
     static wasm_module = module;
+    #x(){} // babel workaround
     #bd;
     #event_loop_sub;
     #event_loop_running = false;
@@ -132,7 +133,7 @@ async function load_libbluray(){
         key = key.toUpperCase();
       if(key in bd_vk_key_e)
         key = bd_vk_key_e[key];
-      await this.$.bd_user_input(this.#bd, -1n, key|0x80000000);
+      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x80000000);
       this.still_timer_resume?.();
     }
     async keypress_end(key){
@@ -140,7 +141,7 @@ async function load_libbluray(){
         key = key.toUpperCase();
       if(key in bd_vk_key_e)
         key = bd_vk_key_e[key];
-      await this.$.bd_user_input(this.#bd, -1n, key|0x20000000);
+      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x20000000);
       this.still_timer_resume?.();
     }
     async keypress(key){
@@ -148,9 +149,9 @@ async function load_libbluray(){
         key = key.toUpperCase();
       if(key in bd_vk_key_e)
         key = bd_vk_key_e[key];
-      await this.$.bd_user_input(this.#bd, -1n, key|0x20000000);
-      await this.$.bd_user_input(this.#bd, -1n, key|0x40000000);
-      await this.$.bd_user_input(this.#bd, -1n, key|0x80000000);
+      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x20000000);
+      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x40000000);
+      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x80000000);
       this.still_timer_resume?.();
     }
     still_timer_resume(){

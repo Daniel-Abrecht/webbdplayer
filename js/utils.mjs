@@ -1,6 +1,7 @@
 "use strict";
 
 export class AsyncCreation {
+  #x(){} // babel workaround
   static #lock;
   constructor(){
     if(!AsyncCreation.#lock)

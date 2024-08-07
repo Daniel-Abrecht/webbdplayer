@@ -5,6 +5,7 @@ import { AsyncCreation } from "./utils.mjs";
 import { MediaSourceHelper } from "./MediaSourceHelper.mjs";
 
 export class GLBDPlayer extends AsyncCreation {
+  #x(){} // babel workaround
   #bluray;
   #gl;
   #program = {};

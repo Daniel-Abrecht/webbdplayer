@@ -23,8 +23,8 @@ function unmarshall_meta(o){
   return o;
 }
 
-const page_size = 1024n * 40n;
-const read_ahead = 10n;
+const page_size = BigInt(1024 * 40);
+const read_ahead = BigInt(10);
 
 export class API {
   constructor(url, base){
@@ -124,7 +124,7 @@ class FileDescription {
   constructor(file, fd){
     this.file = file;
     this.fd = fd;
-    this.offset = 0n;
+    this.offset = BigInt(0);
   }
   async open(mode){
     if((mode??'').indexOf('a') !== -1)
@@ -140,7 +140,7 @@ class FileDescription {
       case 'END': p = size + offset; break;
       case 'SET': p = offset; break;
     }
-    if(p < 0n)
+    if(p < BigInt(0))
       throw new FileSystemError('EINVAL',"Negative offset not allowed");
     // console.log(this.offset, p, offset, whence, size);
     this.offset = p;
@@ -167,7 +167,6 @@ class FileDescription {
 }
 
 const EntryMixin = e => class EntryMixin extends e {
-  static #lock;
   async init(api, base, {path, info}={}){
     this.path = path??[];
     this.api = api instanceof API ? api : new API(api, base);
@@ -223,6 +222,7 @@ function min(a,b){
 const FAST_CACHE_ENTRIES = 1024;
 
 export class File extends EntryMixin(AbstractFile){
+  #x(){} // babel workaround
   #page_count;
   #fast_cache;
   #fast_cache_indeces;
@@ -231,7 +231,7 @@ export class File extends EntryMixin(AbstractFile){
     await super.init(...x);
     if(this.info.type !== 'file')
       throw new Error("Not a file!");
-    this.#page_count = ((BigInt(this.info.size)) + page_size - 1n) / page_size;
+    this.#page_count = ((BigInt(this.info.size)) + page_size - BigInt(1)) / page_size;
     this.#fast_cache = new Array(Number(this.#page_count));
     this.#fast_cache_indeces = [];
     this.#fast_cache_dublicates = 0;
@@ -240,7 +240,7 @@ export class File extends EntryMixin(AbstractFile){
     if(this.info.size <= offset)
       return [];
     const page_start = offset / page_size;
-    const pages_requested = (offset + size + page_size - 1n) / page_size;
+    const pages_requested = (offset + size + page_size - BigInt(1)) / page_size;
     const pages_needed_end = Number(min(pages_requested, this.#page_count));
     const o = Number(offset-page_start*page_size);
     let i = Number(page_start);
