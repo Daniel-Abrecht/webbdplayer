@@ -37,7 +37,7 @@ export default {
     ],
   },
   output: {
-    path: path.resolve(__dirname, './www/dist/'),
-    filename: 'webbdplayer.js',
+    path: path.resolve(__dirname, './build/'),
+    filename: 'webbdplayer.js.part',
   },
 };

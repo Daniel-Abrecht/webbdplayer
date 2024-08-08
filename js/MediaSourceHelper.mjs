@@ -17,6 +17,8 @@ export class MediaSourceHelper {
   constructor(){
     this.#onerror = this.#_onerror.bind(this);
     this.#onupdateend = this.#_onupdateend.bind(this);
+    if(typeof MediaSource === 'undefined')
+      throw new Error("MediaSource API unavailable");
     this.#process();
   }
   async #process(){
@@ -61,9 +63,9 @@ export class MediaSourceHelper {
     }
     if(!this.#header || !this.#mime)
       return;
-    this.#resetinprogress = true;
     console.debug("resetting video");
     this.#mediaSource = new MediaSource();
+    this.#resetinprogress = true;
     this.#mediaSource.onsourceopen = ()=>{
       this.#resetinprogress = false;
       this.#mediaSource.onsourceopen = null;

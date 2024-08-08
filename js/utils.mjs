@@ -31,3 +31,16 @@ export function Future(){
   p.reject = reject;
   return p;
 };
+
+export const $setUint64 = Symbol("setUint64");
+DataView.prototype[$setUint64] = function($offset, value, endianess){
+  if(!(value instanceof Array))
+    value = [value<0?4294967295-value/4294967296:value/4294967296,value];
+  if(endianess){
+    this.setUint32($offset+0, value[1]|0, true);
+    this.setUint32($offset+4, value[0]|0, true);
+  }else{
+    this.setUint32($offset+0, value[0]|0, false);
+    this.setUint32($offset+4, value[1]|0, false);
+  }
+};

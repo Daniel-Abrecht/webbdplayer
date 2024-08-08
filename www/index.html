@@ -2,22 +2,42 @@
 <html>
 <head>
 <script>
-  function logerror(...x){
-    x = x.map(m=>{
-      if(m instanceof ErrorEvent){
-        m = m.error || m;
-        return m.message+'\n'+m.stack;
-      }
-      if(m instanceof PromiseRejectionEvent)
-        m = m.reason;
-      if(m instanceof Error)
-        return m.message+'\n'+m.stack;
-      return `${m}`;
-    }).join('\t');
-    document.body.appendChild(document.createTextNode(x));
+  function is_iOS() {
+    return [
+      'iPad Simulator',
+      'iPhone Simulator',
+      'iPod Simulator',
+      'iPad',
+      'iPhone',
+      'iPod'
+    ].includes(navigator.platform)
   }
-  addEventListener("unhandledrejection", logerror);
-  addEventListener("error", logerror)
+  function logerror(type){
+    const nativeLog = console[type] || console.error;
+    return (...x)=>{
+      nativeLog(...x);
+      if(!is_iOS()) return;
+      x = x.map(m=>{
+        if(m instanceof ErrorEvent){
+          m = m.error || m;
+          return m.message+'\n'+m.stack;
+        }
+        if(m instanceof PromiseRejectionEvent)
+          m = m.reason;
+        if(m instanceof Error)
+          return m.message+'\n'+m.stack;
+        return `${m}`;
+      }).join('\t')+'\n';
+      document.body.appendChild(document.createTextNode(x));
+    };
+  }
+  addEventListener("unhandledrejection", logerror('unhandledrejection'));
+  addEventListener("error", logerror('error-event'))
+  console.log = logerror('log');
+  console.error = logerror('error');
+  console.warn = logerror('warn');
+  console.debug = logerror('debug');
+  console.info = logerror('info');
 </script>
   <script src="dist/webbdplayer.js" async></script>
 </head>

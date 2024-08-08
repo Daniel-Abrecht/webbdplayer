@@ -16,7 +16,7 @@ export async function cleanup(minsize){
 }
 
 export async function load(key, page){
-  const uri = "https://page-cache-v1/"+encodeURIComponent(key)+'/'+Number(page);
+  const uri = "https://page-cache-v1/"+encodeURIComponent(key)+'/'+page;
   const r = new Request(uri);
   const result = await cache.match(r, {ignoreSearch: true});
   if(result)
@@ -26,7 +26,7 @@ export async function load(key, page){
 export async function store(key, page, data){
   const size = +(data.byteLength ?? data.length);
   const access = Date.now();
-  const uri = "https://page-cache-v1/"+encodeURIComponent(key)+'/'+Number(page)+'?t='+Date.now() + '&s=' + size;
+  const uri = "https://page-cache-v1/"+encodeURIComponent(key)+'/'+page+'?t='+Date.now() + '&s=' + size;
   const k = new Request(uri);
   const v = new Response(data);
   cache.delete(k, {ignoreSearch: true});

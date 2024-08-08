@@ -133,7 +133,7 @@ async function load_libbluray(){
         key = key.toUpperCase();
       if(key in bd_vk_key_e)
         key = bd_vk_key_e[key];
-      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x80000000);
+      await this.$.bd_user_input(this.#bd, -1,-1, key|0x80000000);
       this.still_timer_resume?.();
     }
     async keypress_end(key){
@@ -141,7 +141,7 @@ async function load_libbluray(){
         key = key.toUpperCase();
       if(key in bd_vk_key_e)
         key = bd_vk_key_e[key];
-      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x20000000);
+      await this.$.bd_user_input(this.#bd, -1,-1, key|0x20000000);
       this.still_timer_resume?.();
     }
     async keypress(key){
@@ -149,9 +149,9 @@ async function load_libbluray(){
         key = key.toUpperCase();
       if(key in bd_vk_key_e)
         key = bd_vk_key_e[key];
-      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x20000000);
-      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x40000000);
-      await this.$.bd_user_input(this.#bd, BigInt(-1), key|0x80000000);
+      await this.$.bd_user_input(this.#bd, -1,-1, key|0x20000000);
+      await this.$.bd_user_input(this.#bd, -1,-1, key|0x40000000);
+      await this.$.bd_user_input(this.#bd, -1,-1, key|0x80000000);
       this.still_timer_resume?.();
     }
     still_timer_resume(){
@@ -171,17 +171,17 @@ async function load_libbluray(){
       }
       if(mp4_length){
         const mp4_stream = new Uint8Array(this.$.memory.buffer, $mp4, mp4_length);
-        const promise = this.onvideodata?.(mp4_stream);
+        const result = this.onvideodata?.(mp4_stream);
         // (window.dbgbuf??=[]).push(this.$.memory.buffer.slice($mp4, $mp4+mp4_length));
         // console.log(mp4_stream);
-        return promise;
+        return result instanceof Promise ? result.catch(error=>{console.error(error)}) : result;
       }
       return 0;
     }
     async $cb_overlay($ptr, $overlay, $decoded){
       const dv = new DataView(this.$.memory.buffer, $overlay);
       const overlay = {
-        pts: dv.getBigInt64(0, true),
+        pts: dv.getUint32(0, true), // Note: This is technically a bigint value
         plane: dv.getUint8(8),
         cmd: dv.getUint8(9),
         palette_update_flag: dv.getUint8(10),
@@ -265,6 +265,21 @@ async function load_libbluray(){
         } break;
         case bd_overlay_cmd_e.DRAW: {
           wipe();
+          let img;
+          // TODO: Cut away transparent borders to safe some memory.
+          if(typeof createImageBitmap !== "undefined"){
+            img = await createImageBitmap(new ImageData(
+              // Note: This buffer may get overwritten after leaving this function, but createImageBitmap will copy it
+              new Uint8ClampedArray(this.$.memory.buffer, $decoded, overlay.w*overlay.h*4),
+              overlay.w, overlay.h
+            ));
+          }else{
+            img = new ImageData(
+              // Note: This buffer may get overwritten after leaving this function, we copy it using .slice()
+              new Uint8ClampedArray(this.$.memory.buffer, $decoded, overlay.w*overlay.h*4).slice(),
+              overlay.w, overlay.h
+            );
+          }
           scratch.objects.push({
             refcount: 1,
             rect: [
@@ -272,11 +287,7 @@ async function load_libbluray(){
               [overlay.x+overlay.w,overlay.y+overlay.h],
             ],
             visible: [ [[0,0],[1,1]] ], // Normalized coordinates for visible rectangles
-            img: await createImageBitmap(new ImageData( // TODO: Cut away transparent borders to safe some memory.
-              // Note: This buffer may get overwritten after leaving this function
-              new Uint8ClampedArray(this.$.memory.buffer, $decoded, overlay.w*overlay.h*4),
-              overlay.w, overlay.h
-            )),
+            img,
           });
         } break;
         case bd_overlay_cmd_e.HIDE: {

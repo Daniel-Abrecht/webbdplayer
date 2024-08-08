@@ -1,6 +1,6 @@
 "use strict";
 import * as Asyncify from "../asyncify/asyncify.mjs";
-import { AsyncCreation } from "./utils.mjs";
+import { AsyncCreation, $setUint64 } from "./utils.mjs";
 
 export function cstr2str(buf, offset, len){
   const u8 = new Uint8Array(buf, offset ?? 0);
@@ -108,16 +108,16 @@ Object.freeze(wasi_rights);
 export function wasi_rights_decompose(x){
   const res = [];
   for(let i=0; i<wasi_rights.length; i++)
-    if(x & (BigInt(1)<<BigInt(i)))
+    if(x & (1<<i))
       res.push(wasi_rights[i]);
   return res;
 }
 export function wasi_rights_compose(x){
-  let res = BigInt(0);
+  let res = 0;
   for(const k of x){
     if(!wasi_rights[k])
       throw new Error(`Invalid wasi_right "${k}"`);
-    res |= BigInt(1)<<BigInt(wasi_rights[k]);
+    res |= 1<<wasi_rights[k];
   }
   return res;
 }
@@ -203,11 +203,10 @@ export class WASI_Base extends AsyncCreation {
             return ret;
           };*/
           // For debugging calls
-          /*
-          m[o.name] = (...a)=>{
-            console.debug(o.module, o.name, ...a);
-            return x.call(this, ...a);
-          };*/
+          // m[o.name] = (...a)=>{
+          //   console.debug(o.module, o.name, ...a);
+          //   return x.call(this, ...a);
+          // };
           m[o.name] = (...a)=>x.call(this,...a);
         }else{
           m[o.name] = (...a)=>{
@@ -268,10 +267,10 @@ export class WASI_Base extends AsyncCreation {
     dv.setUint16($buf + 2, 0, true); // FDFLAG u16
     dv.setUint16($buf + 4, 0, true); // FDFLAG u16
     // -1 = Just allow everything. We can still fail calls later.
-    dv.setBigUint64($buf + 8, BigInt(stat.rights ?? -1), true);
-    dv.setBigUint64($buf + 16, BigInt(stat.inheritable_rights ?? -1), true);
+    dv[$setUint64]($buf + 8, stat.rights ?? -1, true);
+    dv[$setUint64]($buf + 16, stat.inheritable_rights ?? -1, true);
   }
-  async $path_open(dirfd, dirflags, $path, path_length, oflags, rights, inheritable_rights, fsFlags, $fd){
+  async $path_open(dirfd, dirflags, $path, path_length, oflags, h_rights, l_rights, h_inheritable_rights, l_inheritable_rights, fsFlags, $fd){
     const result = await exception_to_errno_a(async()=>{
       const dir = this.#fdinfo[dirfd];
       if(!dir)
@@ -288,7 +287,7 @@ export class WASI_Base extends AsyncCreation {
       let type = wasi_filetype.DIRECTORY; // TODO
       this.#fdinfo[fd] = {
         type,
-        rights,
+        rights: h_rights,
         fs,
       };
       return 0;
@@ -296,10 +295,10 @@ export class WASI_Base extends AsyncCreation {
     return result;
   }
   // This is an awful WASI API...
-  async $fd_readdir(fd, $buf, size, cookie, $size){
+  async $fd_readdir(fd, $buf, size, h_cookie, l_cookie, $size){
     return await exception_to_errno_a(async()=>{
       const dir = this.#fdinfo[fd];
-      const entries = (await dir.fs.readdir(cookie)).slice(Number(cookie));
+      const entries = (await dir.fs.readdir(h_cookie)).slice(h_cookie);
       const dv = new DataView(this.$.memory.buffer);
       let offset = 0;
       for(let i=0; i<entries.length; i++){
@@ -312,8 +311,8 @@ export class WASI_Base extends AsyncCreation {
           break;
         let inode = 0;
         let filetype = 0;
-        dv.setBigUint64($buf, BigInt(i + 1), true);
-        dv.setBigUint64($buf+8, BigInt(inode), true);
+        dv[$setUint64]($buf, i + 1, true);
+        dv[$setUint64]($buf+8, inode, true);
         dv.setUint32($buf+16, name.byteLength, true);
         dv.setUint8($buf+20, filetype);
         new Uint8Array(this.$.memory.buffer).set(name, $buf+24);
@@ -352,7 +351,7 @@ export class WASI_Base extends AsyncCreation {
       if(!stat.fs?.read)
         throw new WASI_Error('EINVAL', "File is not readable");
       const iovs = this.getiovs($iovs, count);
-      const size = iovs.reduce((a,b)=>a+BigInt(b.byteLength), BigInt(0));
+      const size = iovs.reduce((a,b)=>a+b.byteLength, 0);
       const result = stat.fs.read(size);
       const f = result=>{
         const dv = new DataView(this.$.memory.buffer);
@@ -380,13 +379,13 @@ export class WASI_Base extends AsyncCreation {
       return result instanceof Promise ? result.then(f) : f(result);
     });
   }
-  $fd_seek(fd, offset, whence, $new_offset){
+  $fd_seek(fd, h_offset, l_offset, whence, $new_offset){
     return exception_to_errno_a(()=>{
       const stat = this.#fdinfo[fd];
       const dv = new DataView(this.$.memory.buffer);
-      const new_offset = stat.fs.seek(offset, ['SET','CUR','END'][whence]);
+      const new_offset = stat.fs.seek(h_offset, ['SET','CUR','END'][whence]);
       const f = new_offset=>{
-        dv.setBigUint64($new_offset, new_offset, true);
+        dv[$setUint64]($new_offset, new_offset, true);
       };
       return new_offset instanceof Promise ? new_offset.then(f) : f(new_offset);
     });
@@ -397,7 +396,7 @@ export class WASI_Base extends AsyncCreation {
       const dv = new DataView(this.$.memory.buffer);
       const offset = stat.fs.tell();
       const f = offset=>{
-        dv.setBigUint64($offset, offset, true);
+        dv[$setUint64]($offset, offset, true);
       };
       return offset instanceof Promise ? offset.then(f) : f(offset);
     });
@@ -409,13 +408,16 @@ export class WASI_Base extends AsyncCreation {
     new Uint8Array(this.$.memory.buffer).set(a, mem);
     return mem;
   }
-  $clock_time_get(clock_id, precision, $result){
+  $clock_time_get(clock_id, h_precision,l_precision, $result){
     // Note: No idea how precision is supposed to be used...
     const dv = new DataView(this.$.memory.buffer);
+    let time;
     switch(clock_id){
-      case 0: dv.setBigUint64($result, BigInt(Date.now())*BigInt(1000000), true); break;
-      default: dv.setBigUint64($result, BigInt(performance.now())*BigInt(1000000), true); break;
+      case 0: time = Date.now(); break;
+      default: time = performance.now(); break;
     }
+    time = [time / 2**32 * 1000000 |0, time * 1000000 |0];
+    dv[$setUint64]($result, time, true);
     return 0;
   }
   getiovs($iovs, length){

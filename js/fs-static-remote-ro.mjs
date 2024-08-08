@@ -23,8 +23,8 @@ function unmarshall_meta(o){
   return o;
 }
 
-const page_size = BigInt(1024 * 40);
-const read_ahead = BigInt(10);
+const page_size = 1024 * 40;
+const read_ahead = 10;
 
 export class API {
   constructor(url, base){
@@ -59,7 +59,7 @@ export class API {
     let results = [];
     {
       let j=0;
-      for(let i=Number(page_start),e=i+Number(page_count); i<e; i++,j++){
+      for(let i=page_start,e=i+page_count; i<e; i++,j++){
         if(this.loading[i]){
           results[j] = this.loading[i];
         }else{
@@ -74,14 +74,14 @@ export class API {
     for(let i=0; i<results.length; i++){
       if(results[i]){
         if(end)
-          pranges.push([page_start+BigInt(start),page_start+BigInt(end)]);
+          pranges.push([page_start+start,page_start+end]);
         start = i+1;
         end = 0;
       }else{
         end = i+1;
       }
     }
-    if(end) pranges.push([page_start+BigInt(start),page_start+BigInt(end)]);
+    if(end) pranges.push([page_start+start,page_start+end]);
     if(pranges.length){
       const ranges = pranges.map(([a,b])=>[a*page_size,b*page_size]);
       const purl = url+'?r='+ranges.map(a=>a.join('-')).join(',');
@@ -95,9 +95,9 @@ export class API {
         let j=0;
         for(const prange of pranges)
         for(let i=prange[0]; i<prange[1]; i++){
-          const k = Number(i);
+          const k = i;
           const l = j++;
-          results[k-Number(page_start)] = this.loading[k] = (async()=>{
+          results[k-page_start] = this.loading[k] = (async()=>{
             let v;
             try {
               v = await promise;
@@ -105,8 +105,8 @@ export class API {
               delete this.loading[k];
               throw e;
             }
-            const start = l*Number(page_size);
-            const end = Math.min(start + Number(page_size), v.byteLength);
+            const start = l * page_size;
+            const end = Math.min(start + page_size, v.byteLength);
             const res = new Uint8Array(v, start, end-start);
             await PageCache.store(url, k, res);
             delete this.loading[k];
@@ -124,7 +124,7 @@ class FileDescription {
   constructor(file, fd){
     this.file = file;
     this.fd = fd;
-    this.offset = BigInt(0);
+    this.offset = 0;
   }
   async open(mode){
     if((mode??'').indexOf('a') !== -1)
@@ -133,14 +133,14 @@ class FileDescription {
   seek(offset, whence){
     if(!('size' in this.file.info))
       throw new FileSystemError('ESPIPE',"Illegal seek");
-    const size = BigInt(this.file.info.size);
+    const size = this.file.info.size;
     let p;
     switch(whence){
       case 'CUR': p = this.offset + offset; break;
       case 'END': p = size + offset; break;
       case 'SET': p = offset; break;
     }
-    if(p < BigInt(0))
+    if(p < 0)
       throw new FileSystemError('EINVAL',"Negative offset not allowed");
     // console.log(this.offset, p, offset, whence, size);
     this.offset = p;
@@ -150,13 +150,13 @@ class FileDescription {
     return this.offset;
   }
   pread(size, offset){
-    const file_size = BigInt(this.file.info.size);
+    const file_size = this.file.info.size;
     if(offset >= file_size)
       return [];
     if(offset+size >= file_size)
       size = file_size-offset;
     if(this.file.info.content)
-      return [this.file.info.content.subarray(Number(offset), Number(size))];
+      return [this.file.info.content.subarray(offset, size)];
     return this.file.load_data(offset, size);
   }
   read(size){
@@ -211,14 +211,6 @@ export class Directory extends EntryMixin(AbstractDirectory){
   }
 };
 
-function max(a,b){
-  return a > b ? a : b;
-}
-
-function min(a,b){
-  return a < b ? a : b;
-}
-
 const FAST_CACHE_ENTRIES = 1024;
 
 export class File extends EntryMixin(AbstractFile){
@@ -231,19 +223,19 @@ export class File extends EntryMixin(AbstractFile){
     await super.init(...x);
     if(this.info.type !== 'file')
       throw new Error("Not a file!");
-    this.#page_count = ((BigInt(this.info.size)) + page_size - BigInt(1)) / page_size;
-    this.#fast_cache = new Array(Number(this.#page_count));
+    this.#page_count = (this.info.size + page_size - 1) / page_size |0;
+    this.#fast_cache = new Array(this.#page_count);
     this.#fast_cache_indeces = [];
     this.#fast_cache_dublicates = 0;
   }
   load_data(offset, size){
     if(this.info.size <= offset)
       return [];
-    const page_start = offset / page_size;
-    const pages_requested = (offset + size + page_size - BigInt(1)) / page_size;
-    const pages_needed_end = Number(min(pages_requested, this.#page_count));
-    const o = Number(offset-page_start*page_size);
-    let i = Number(page_start);
+    const page_start = offset / page_size |0;
+    const pages_requested = (offset + size + page_size - 1) / page_size |0;
+    const pages_needed_end = Math.min(pages_requested, this.#page_count);
+    const o = offset - page_start*page_size;
+    let i = page_start;
     const cached = [];
     for(; i < pages_needed_end; i++){
       const e = this.#fast_cache[i];
@@ -259,10 +251,10 @@ export class File extends EntryMixin(AbstractFile){
       // console.log(cached.length, [...cached]);
       return cached;
     }
-    const pages_to_be_loaded = Number(min(pages_requested + read_ahead, this.#page_count)) - i;
+    const pages_to_be_loaded = Math.min(pages_requested + read_ahead, this.#page_count) - i;
     return (async()=>{
       // console.log(i, cached.length, pages_to_be_loaded);
-      const result = await this.api.load(this.path, BigInt(i), pages_to_be_loaded);
+      const result = await this.api.load(this.path, i, pages_to_be_loaded);
       for(let j=0; j<pages_to_be_loaded; j++){
         let e = this.#fast_cache[i+j];
         if(e){

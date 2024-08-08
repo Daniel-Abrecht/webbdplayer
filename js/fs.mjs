@@ -32,7 +32,7 @@ class FileDescription {
   // Sometimes, waiting for promises would be too slow. The asyncify stuff may have to unwind the stack when things aren't sync.
   readdir(index){
     if(this.fs.dirent?.readdir)
-      return this.fs.dirent.readdir(Number(index));
+      return this.fs.dirent.readdir(index);
     // TODO: check mountpoint paths
     return [];
   }

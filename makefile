@@ -71,17 +71,23 @@ WASMCFLAGS += -std=c99
 WASMCFLAGS += -fstack-protector-all
 OPTIMIZE = -O2 # -g
 
-WASMCC = clang-16 --target=wasm32-wasi -D_GNU_SOURCE
+WASMCC = clang --target=wasm32-wasi -D_GNU_SOURCE
 
 CFLAGS = -std=c11 -Wall -Wextra -pedantic -g
 
 all: www/dist/webbdplayer.js
 
-www/dist/webbdplayer.js: $(wildcard js/*.mjs)
-www/dist/webbdplayer.js: build/libbluray.async.wasm
-www/dist/webbdplayer.js: webpack.config.mjs
+www/dist/webbdplayer.js: js/compat.js build/webbdplayer.js.part
+	( \
+	  tr '\n' ' ' <js/compat.js; \
+	  cat build/webbdplayer.js.part; \
+	) >$@
 
-www/dist/webbdplayer.js:
+build/webbdplayer.js.part: $(wildcard js/*.mjs js/*.js)
+build/webbdplayer.js.part: build/libbluray.async.wasm
+build/webbdplayer.js.part: webpack.config.mjs
+
+build/webbdplayer.js.part:
 	webpack
 	touch $@
 
@@ -90,11 +96,11 @@ build/libbluray.wasm: $(OBJECTS)
 	$(WASMCC) $(OPTIMIZE) -Wl,--error-limit=0 \
 	   -Wl,--export-dynamic -Wl,--allow-undefined \
 	   -Wl,--export=malloc -Wl,--export=free \
-	   -Wl,--export=__stack_low -Wl,--export=__stack_high -Wl,--export=__stack_pointer \
+	   -Wl,--export=__stack_low -Wl,--export=__stack_high \
 	   -o $@ $^
 
 %.async.wasm: %.wasm
-	wasm-opt $(OPTIMIZE) --asyncify $< -o $@
+	wasm-opt $(OPTIMIZE) --asyncify --legalize-js-interface $< -o $@
 
 build/o/%.c.o: %.c
 	mkdir -p $(dir $@)
@@ -104,4 +110,5 @@ clean:
 	rm -f $(OBJECTS)
 	rm -f build/libbluray.wasm
 	rm -f build/libbluray.async.wasm
+	rm -f build/webbdplayer.js.part
 	rm -f www/dist/webbdplayer.js
